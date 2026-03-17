@@ -3,6 +3,9 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <Preferences.h>
+#ifdef HTTP_ANY
+#undef HTTP_ANY
+#endif
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 

@@ -96,7 +96,7 @@ void MQTTHandler::publishLearned(const String& slot, uint16_t pulseCount) {
 // ────────────────────────────────────────────────────────────────────────────
 // isConnected()
 // ────────────────────────────────────────────────────────────────────────────
-bool MQTTHandler::isConnected() const {
+bool MQTTHandler::isConnected() {
   return _client.connected();
 }
 

@@ -34,7 +34,7 @@ public:
   // Publish fanspitter/learned after a successful capture.
   void publishLearned(const String& slot, uint16_t pulseCount);
 
-  bool isConnected() const;
+  bool isConnected();
 
 private:
   const char*   _broker;

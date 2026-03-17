@@ -1,0 +1,5 @@
+ESP32Async/AsyncTCP @ ^3.0.0
+knolleary/PubSubClient @ ^2.8
+bblanchon/ArduinoJson @ ^7.0.0
+tzapu/WiFiManager @ ^2.0.17
+ESP32Async/ESPAsyncWebServer @ ^3.0.0

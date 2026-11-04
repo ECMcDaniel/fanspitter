@@ -1,47 +1,59 @@
 #include "rf_learn.h"
+#include "pulse_match.h"
+#include <driver/gpio.h>
 #include <esp_timer.h>   // esp_timer_get_time() — IRAM-safe µs clock
 
 // ────────────────────────────────────────────────────────────────────────────
-// Singleton instance (used by global ISR)
+// ISR ring buffer (DRAM, shared between ISR and the loop task; both run on
+// the same core because the ISR is attached from the loop task)
 // ────────────────────────────────────────────────────────────────────────────
-RFLearn* RFLearn::instance = nullptr;
+struct PulseRingBuffer {
+  volatile uint16_t buf[RF_MAX_PULSES];
+  volatile uint16_t head;       // ISR writes
+  volatile uint16_t tail;       // loop reads
+  volatile bool     frameReady; // ISR sets when an end-of-frame gap is seen
+  volatile bool     overflow;   // ISR sets when the buffer is full
+  volatile uint32_t lastEdgeUs; // timestamp of last edge (µs)
+};
 
-// Global ring-buffer in DRAM (reachable from IRAM ISR)
 static PulseRingBuffer s_rb;
 
+static void resetRingBuffer() {
+  s_rb.head       = 0;
+  s_rb.tail       = 0;
+  s_rb.frameReady = false;
+  s_rb.overflow   = false;
+  s_rb.lastEdgeUs = (uint32_t)esp_timer_get_time();
+}
+
 // ────────────────────────────────────────────────────────────────────────────
-// ISR — must be in IRAM, must be fast
+// ISR — in IRAM, records the width of every level between edges on GDO0.
 // ────────────────────────────────────────────────────────────────────────────
-void IRAM_ATTR gdo0IsrHandler() {
-  uint32_t now = (uint32_t)esp_timer_get_time();  // µs, 32-bit is fine (wraps ~71 min)
+static void IRAM_ATTR gdo0IsrHandler() {
+  uint32_t now   = (uint32_t)esp_timer_get_time();
   uint32_t width = now - s_rb.lastEdgeUs;
   s_rb.lastEdgeUs = now;
 
-  // Glitch filter: ignore edges < 50 µs
-  if (width < 50) return;
+  if (width < RF_GLITCH_US) return;
 
-  // End-of-frame gap detection
+  // A long quiet period ends a frame. The edge that ends the gap is the
+  // start of the next frame's first (carrier-on) pulse.
   if (width >= RF_FRAME_GAP_US) {
-    // Signal frame just ended — flag it if we captured something
-    if (s_rb.head != s_rb.tail) {
-      s_rb.frameReady = true;
-    }
+    if (s_rb.head != s_rb.tail) s_rb.frameReady = true;
     return;
   }
 
-  // Store pulse width in ring buffer
   uint16_t next = (s_rb.head + 1) % RF_MAX_PULSES;
   if (next == s_rb.tail) {
     s_rb.overflow = true;
-    return;  // discard; don't move head
+    return;
   }
-  // Clamp to uint16_t max (65535 µs ≈ 65 ms — far beyond any fan pulse)
-  s_rb.buf[s_rb.head] = (uint16_t)(width > 65535 ? 65535 : width);
+  s_rb.buf[s_rb.head] = (uint16_t)width;  // < RF_FRAME_GAP_US, fits in 16 bits
   s_rb.head = next;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Constructor
+// Construction / setup
 // ────────────────────────────────────────────────────────────────────────────
 RFLearn::RFLearn(CC1101& cc1101, uint8_t gdo0Pin)
   : _cc(cc1101),
@@ -50,103 +62,70 @@ RFLearn::RFLearn(CC1101& cc1101, uint8_t gdo0Pin)
     _captureCount(0),
     _confirmedLen(0),
     _confirmedPending(false),
-    _txPulses(nullptr),
-    _txCount(0),
-    _learnStartMs(0)
-{
+    _learnStartMs(0) {
   memset(_captureLen, 0, sizeof(_captureLen));
-  instance = this;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// begin() — attach ISR, put CC1101 in RX
-// ────────────────────────────────────────────────────────────────────────────
 void RFLearn::begin() {
-  // Initialise ring buffer
-  s_rb.head       = 0;
-  s_rb.tail       = 0;
-  s_rb.frameReady = false;
-  s_rb.overflow   = false;
-  s_rb.lastEdgeUs = (uint32_t)esp_timer_get_time();
-
-  _cc.enterRX();
-  pinMode(_gdo0Pin, INPUT);
-  attachISR();
+  resetRingBuffer();
+  _cc.setIdle();
+  // Pull-down keeps GDO0 low whenever the CC1101 isn't driving it, so the
+  // carrier stays off and the strapping pin reads low on reset.
+  pinMode(_gdo0Pin, INPUT_PULLDOWN);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // process() — state machine tick; call every loop()
 // ────────────────────────────────────────────────────────────────────────────
 void RFLearn::process() {
-  switch (_state) {
+  if (_state != State::LEARNING && _state != State::CONFIRMING) return;
 
-  case State::LEARNING:
-  case State::CONFIRMING: {
-    // Learn timeout watchdog
-    if ((millis() - _learnStartMs) > RF_LEARN_TIMEOUT_MS) {
-      Serial.println("[RF] Learn timeout");
-      _state = State::IDLE;
-      _captureCount = 0;
-      if (_learnDoneCb) _learnDoneCb(false, "timeout");
-      return;
-    }
-
-    // Log overflow but don't abort — signal may still be usable
-    if (s_rb.overflow) {
-      s_rb.overflow = false;
-      Serial.println("[RF] WARN: ring buffer overflow (long signal?)");
-    }
-
-    // Frame available?
-    if (!s_rb.frameReady) return;
-    s_rb.frameReady = false;
-
-    drainFrameFromRingBuffer();
-
-    if (_captureLen[_captureCount] < RF_MIN_PULSES) {
-      Serial.printf("[RF] Frame too short (%u pulses), ignoring\n",
-                    _captureLen[_captureCount]);
-      return;
-    }
-
-    _captureCount++;
-
-    if (_captureCount == 1) {
-      Serial.printf("[RF] Frame 1 captured (%u pulses) — press remote again\n",
-                    _captureLen[0]);
-      _state = State::CONFIRMING;
-      return;
-    }
-
-    // We have two frames — try to confirm
-    if (confirmFrames()) {
-      Serial.printf("[RF] Signal confirmed! (%u pulses stored)\n", _confirmedLen);
-      _confirmedPending = true;
-      _state = State::IDLE;
-      _captureCount = 0;
-      if (_learnDoneCb) _learnDoneCb(true, "confirmed");
-    } else {
-      // Shift: use second frame as first, wait for another
-      Serial.println("[RF] Frames didn't match — waiting for next press");
-      memcpy(_capture[0], _capture[1], _captureLen[1] * sizeof(uint16_t));
-      _captureLen[0] = _captureLen[1];
-      _captureCount = 1;
-      // Stay in CONFIRMING
-    }
-    break;
+  if ((millis() - _learnStartMs) > RF_LEARN_TIMEOUT_MS) {
+    Serial.println("[RF] Learn timeout");
+    finishLearn(false, "timeout");
+    return;
   }
 
-  case State::TRANSMITTING:
-    // doTransmit() is synchronous; this case is never reached in normal flow.
-    break;
+  if (s_rb.overflow) {
+    s_rb.overflow = false;
+    Serial.println("[RF] WARN: ring buffer overflow (long signal or noise)");
+  }
 
-  default:
-    break;
+  if (!s_rb.frameReady) return;
+  s_rb.frameReady = false;
+
+  drainFrameFromRingBuffer();
+
+  if (_captureLen[_captureCount] < RF_MIN_PULSES) {
+    Serial.printf("[RF] Frame too short (%u pulses), ignoring\n",
+                  _captureLen[_captureCount]);
+    return;
+  }
+
+  _captureCount++;
+
+  if (_captureCount == 1) {
+    Serial.printf("[RF] Frame 1 captured (%u pulses) — press remote again\n",
+                  _captureLen[0]);
+    _state = State::CONFIRMING;
+    return;
+  }
+
+  if (confirmFrames()) {
+    Serial.printf("[RF] Signal confirmed (%u pulses)\n", _confirmedLen);
+    _confirmedPending = true;
+    finishLearn(true, "confirmed");
+  } else {
+    // Keep the newer frame as the reference and wait for another press.
+    Serial.println("[RF] Frames didn't match — waiting for next press");
+    memcpy(_capture[0], _capture[1], _captureLen[1] * sizeof(uint16_t));
+    _captureLen[0] = _captureLen[1];
+    _captureCount  = 1;
   }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// startLearn()
+// Learn control
 // ────────────────────────────────────────────────────────────────────────────
 bool RFLearn::startLearn() {
   if (_state != State::IDLE) return false;
@@ -154,31 +133,36 @@ bool RFLearn::startLearn() {
   _confirmedPending = false;
   _learnStartMs     = millis();
   _state            = State::LEARNING;
-  // Clear ring buffer
-  s_rb.head       = 0;
-  s_rb.tail       = 0;
-  s_rb.frameReady = false;
-  s_rb.overflow   = false;
+
+  resetRingBuffer();
+  _cc.setIdle();
+  _cc.enterRX();
+  attachISR();
   Serial.println("[RF] Learn mode started — press remote button");
   return true;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// startTransmit()
-// ────────────────────────────────────────────────────────────────────────────
-bool RFLearn::startTransmit(const uint16_t* pulses, uint16_t count) {
-  if (_state != State::IDLE) return false;
-  if (!pulses || count == 0) return false;
-  _txPulses = pulses;
-  _txCount  = count;
-  _state    = State::TRANSMITTING;
-  doTransmit();  // synchronous; sets _state = IDLE when done
-  return true;
+void RFLearn::cancelLearn() {
+  if (_state != State::LEARNING && _state != State::CONFIRMING) return;
+  stopRx();
+  _captureCount = 0;
+  _state = State::IDLE;
+  Serial.println("[RF] Learn cancelled");
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// getConfirmedPulses()
-// ────────────────────────────────────────────────────────────────────────────
+void RFLearn::finishLearn(bool ok, const char* reason) {
+  stopRx();
+  _captureCount = 0;
+  _state = State::IDLE;
+  if (_learnDoneCb) _learnDoneCb(ok, reason);
+}
+
+void RFLearn::stopRx() {
+  detachISR();
+  _cc.setIdle();
+  pinMode(_gdo0Pin, INPUT_PULLDOWN);
+}
+
 uint16_t RFLearn::getConfirmedPulses(uint16_t* outBuf, uint16_t maxLen) const {
   if (!_confirmedPending || _confirmedLen == 0) return 0;
   uint16_t n = (_confirmedLen < maxLen) ? _confirmedLen : maxLen;
@@ -187,13 +171,11 @@ uint16_t RFLearn::getConfirmedPulses(uint16_t* outBuf, uint16_t maxLen) const {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// drainFrameFromRingBuffer()
-// Copies pending pulse widths from ring buffer into _capture[_captureCount].
-// Must only be called from the main task, not from ISR.
+// Copy pulses up to the current head into _capture[_captureCount].
 // ────────────────────────────────────────────────────────────────────────────
 void RFLearn::drainFrameFromRingBuffer() {
   uint16_t dst = 0;
-  uint16_t h   = s_rb.head;         // snapshot (ISR may still advance after this)
+  uint16_t h   = s_rb.head;  // snapshot; ISR may keep appending
 
   while (s_rb.tail != h && dst < RF_MAX_PULSES) {
     _capture[_captureCount][dst++] = s_rb.buf[s_rb.tail];
@@ -202,101 +184,81 @@ void RFLearn::drainFrameFromRingBuffer() {
   _captureLen[_captureCount] = dst;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// confirmFrames()
-// Compare _capture[0] vs _capture[1] pulse-by-pulse.
-// Returns true if they match within RF_CONFIRM_TOL_PCT tolerance.
-// On success, fills _confirmedBuf with the element-wise average.
-// ────────────────────────────────────────────────────────────────────────────
 bool RFLearn::confirmFrames() {
-  uint16_t len0 = _captureLen[0];
-  uint16_t len1 = _captureLen[1];
-
-  if (len0 < RF_MIN_PULSES || len1 < RF_MIN_PULSES) return false;
-
-  // Allow up to 2 pulses difference in length (sometimes preamble varies)
-  if (len0 > len1 + 2 || len1 > len0 + 2) {
-    Serial.printf("[RF] Length mismatch: %u vs %u\n", len0, len1);
+  const PulseMatchParams p = {
+    RF_MIN_PULSES, RF_CONFIRM_MAX_LEN_DIFF, RF_CONFIRM_TOL_PCT, RF_CONFIRM_TOL_MIN_US
+  };
+  uint16_t at = 0;
+  uint16_t n = matchFrames(_capture[0], _captureLen[0],
+                           _capture[1], _captureLen[1],
+                           p, _confirmedBuf, &at);
+  if (n == 0) {
+    if (at == 0xFFFF) {
+      Serial.printf("[RF] Length mismatch: %u vs %u\n", _captureLen[0], _captureLen[1]);
+    } else {
+      Serial.printf("[RF] Pulse %u mismatch: %u vs %u\n",
+                    at, _capture[0][at], _capture[1][at]);
+    }
     return false;
   }
-
-  uint16_t len = (len0 < len1) ? len0 : len1;
-
-  for (uint16_t i = 0; i < len; i++) {
-    uint16_t a = _capture[0][i];
-    uint16_t b = _capture[1][i];
-    uint16_t ref  = (a > b) ? a : b;   // use the larger as reference
-    uint16_t diff = (a > b) ? (a - b) : (b - a);
-    if (diff > (uint32_t)ref * RF_CONFIRM_TOL_PCT / 100) {
-      Serial.printf("[RF] Pulse %u mismatch: %u vs %u\n", i, a, b);
-      return false;
-    }
-  }
-
-  // Average the two captures for storage (reduces noise)
-  for (uint16_t i = 0; i < len; i++) {
-    _confirmedBuf[i] = (_capture[0][i] + _capture[1][i]) / 2;
-  }
-  _confirmedLen = len;
+  _confirmedLen = n;
   return true;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// doTransmit()
-// Bit-bangs the stored pulse train via GDO0.
-// Called synchronously from startTransmit(); runs entirely in the loop task.
+// transmit() — bit-bang the pulse train on GDO0 with the CC1101 in async TX.
 // ────────────────────────────────────────────────────────────────────────────
-void RFLearn::doTransmit() {
-  // Step 1: detach ISR so we hold exclusive control of GDO0
-  detachISR();
+bool RFLearn::transmit(const uint16_t* pulses, uint16_t count) {
+  if (_state != State::IDLE || !pulses || count == 0) return false;
+  _state = State::TRANSMITTING;
 
-  // Step 2: switch CC1101 to TX (sets IOCFG0=0x0B)
-  _cc.enterTX();
-
-  // Step 3: MCU takes over GDO0 as digital output
-  pinMode(_gdo0Pin, OUTPUT);
-  digitalWrite(_gdo0Pin, LOW);
-  delayMicroseconds(500);  // brief idle before first frame
-
-  // Step 4: transmit RF_TX_REPEATS times with 20 ms inter-frame gaps
-  for (uint8_t rep = 0; rep < RF_TX_REPEATS; rep++) {
-    // Most OOK fan remotes: first pulse HIGH (carrier on), alternating after.
-    bool level = HIGH;
-
-    // Disable ISRs for timing accuracy during the bit-bang loop.
-    // Total TX is typically 50–120 ms; one missed WiFi beacon is acceptable.
-    portDISABLE_INTERRUPTS();
-    for (uint16_t i = 0; i < _txCount; i++) {
-      digitalWrite(_gdo0Pin, level);
-      delayMicroseconds(_txPulses[i]);
-      level = !level;
-    }
-    digitalWrite(_gdo0Pin, LOW);  // carrier off at frame end
-    portENABLE_INTERRUPTS();
-
-    if (rep < RF_TX_REPEATS - 1) {
-      delay(20);  // 20 ms inter-frame gap
-    }
+  _cc.setIdle();
+  if (!_cc.enterTX()) {
+    Serial.printf("[RF] ERROR: CC1101 did not enter TX (MARCSTATE=0x%02X)\n",
+                  _cc.getMarcState());
+    _cc.setIdle();
+    _state = State::IDLE;
+    return false;
   }
 
-  // Step 5: return CC1101 to RX, re-attach ISR
-  _cc.setIdle();
-  _cc.enterRX();
-  pinMode(_gdo0Pin, INPUT);
-  attachISR();
+  const gpio_num_t pin = (gpio_num_t)_gdo0Pin;
+  pinMode(_gdo0Pin, OUTPUT);
+  gpio_set_level(pin, 0);
+  delayMicroseconds(500);  // let the PA settle with the carrier off
 
+  // Mask interrupts on this core during each frame for clean timing, unless
+  // the frame is long enough to risk the interrupt watchdog.
+  const bool mask = frameDurationUs(pulses, count) <= RF_TX_MAX_MASKED_US;
+  if (!mask) Serial.println("[RF] WARN: long frame — sending without masking interrupts");
+
+  for (uint8_t rep = 0; rep < RF_TX_REPEATS; rep++) {
+    uint32_t level = 1;  // first captured pulse is carrier-on
+    if (mask) portDISABLE_INTERRUPTS();
+    for (uint16_t i = 0; i < count; i++) {
+      gpio_set_level(pin, level);
+      delayMicroseconds(pulses[i]);
+      level ^= 1;
+    }
+    gpio_set_level(pin, 0);
+    if (mask) portENABLE_INTERRUPTS();
+
+    if (rep + 1 < RF_TX_REPEATS) delay(RF_TX_GAP_MS);
+  }
+
+  _cc.setIdle();
+  pinMode(_gdo0Pin, INPUT_PULLDOWN);
   _state = State::IDLE;
-  Serial.printf("[RF] Transmitted %u pulses × %u\n", _txCount, RF_TX_REPEATS);
-  if (_txDoneCb) _txDoneCb(true, "ok");
+  Serial.printf("[RF] Transmitted %u pulses x %u\n", count, RF_TX_REPEATS);
+  return true;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// ISR attach / detach helpers
+// ISR attach / detach
 // ────────────────────────────────────────────────────────────────────────────
 void RFLearn::attachISR() {
+  pinMode(_gdo0Pin, INPUT);
   s_rb.lastEdgeUs = (uint32_t)esp_timer_get_time();
-  attachInterrupt(digitalPinToInterrupt(_gdo0Pin),
-                  gdo0IsrHandler, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(_gdo0Pin), gdo0IsrHandler, CHANGE);
 }
 
 void RFLearn::detachISR() {

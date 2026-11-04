@@ -1,162 +1,113 @@
 #include "mqtt_handler.h"
 #include <ArduinoJson.h>
 
-// ────────────────────────────────────────────────────────────────────────────
-// Topic constants
-// ────────────────────────────────────────────────────────────────────────────
-static constexpr const char* TOPIC_LEARN   = "fanspitter/learn";
-static constexpr const char* TOPIC_CMD     = "fanspitter/cmd";
-static constexpr const char* TOPIC_STATUS  = "fanspitter/status";
-static constexpr const char* TOPIC_LEARNED = "fanspitter/learned";
+static constexpr const char* OFFLINE_PAYLOAD = "{\"state\":\"offline\"}";
+static constexpr uint32_t    BACKOFF_MIN_MS  = 5000;
+static constexpr uint32_t    BACKOFF_MAX_MS  = 60000;
 
-// ────────────────────────────────────────────────────────────────────────────
-// Singleton
-// ────────────────────────────────────────────────────────────────────────────
 MQTTHandler* MQTTHandler::_instance = nullptr;
 
-// ────────────────────────────────────────────────────────────────────────────
-// Constructor
-// ────────────────────────────────────────────────────────────────────────────
-MQTTHandler::MQTTHandler(const char* broker, uint16_t port)
-  : _broker(broker),
-    _port(port),
-    _lastReconnectMs(0)
-{
+MQTTHandler::MQTTHandler(const MqttConfig& cfg) : _cfg(cfg) {
+  String base = _cfg.baseTopic;
+  while (base.endsWith("/")) base.remove(base.length() - 1);
+  if (base.length() == 0) base = "fanspitter";
+  _tLearn   = base + "/learn";
+  _tCmd     = base + "/cmd";
+  _tStatus  = base + "/status";
+  _tLearned = base + "/learned";
+
   _client.setClient(_wifiClient);
-  _client.setServer(_broker, _port);
+  _client.setServer(_cfg.host.c_str(), _cfg.port);
   _client.setCallback(mqttCallback);
-  _client.setBufferSize(512);  // large enough for status JSON with 8 slots
+  _client.setBufferSize(1024);   // status JSON with 8 × 32-char slot names
+  _client.setSocketTimeout(3);   // bound how long connect() can block (s)
+  _client.setKeepAlive(30);
   _instance = this;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// begin()
-// ────────────────────────────────────────────────────────────────────────────
-void MQTTHandler::begin(const char* clientId, SlotCb onLearn, SlotCb onSend) {
-  _clientId = clientId;
-  _onLearn  = onLearn;
-  _onSend   = onSend;
+void MQTTHandler::begin(const String& clientId, SlotCb onLearn, SlotCb onSend,
+                        ConnectCb onConnect) {
+  _clientId  = clientId;
+  _onLearn   = onLearn;
+  _onSend    = onSend;
+  _onConnect = onConnect;
+  _wifiClient.setConnectionTimeout(3000);  // ms; bounds the TCP connect
+  if (enabled()) reconnect();
+}
+
+void MQTTHandler::loop() {
+  if (!enabled()) return;
+  if (_client.connected()) {
+    _client.loop();
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  unsigned long now = millis();
+  if (now - _lastAttemptMs < _backoffMs) return;
   reconnect();
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// loop()
-// ────────────────────────────────────────────────────────────────────────────
-void MQTTHandler::loop() {
-  if (!_client.connected()) {
-    unsigned long now = millis();
-    if (now - _lastReconnectMs > 5000UL) {
-      _lastReconnectMs = now;
-      reconnect();
-    }
-    return;
+bool MQTTHandler::reconnect() {
+  _lastAttemptMs = millis();
+  Serial.printf("[MQTT] Connecting to %s:%u as %s%s\n",
+                _cfg.host.c_str(), _cfg.port, _clientId.c_str(),
+                _cfg.user.length() ? " (auth)" : "");
+
+  const char* user = _cfg.user.length() ? _cfg.user.c_str() : nullptr;
+  const char* pass = _cfg.user.length() ? _cfg.pass.c_str() : nullptr;
+
+  bool ok = _client.connect(_clientId.c_str(), user, pass,
+                            _tStatus.c_str(), /*willQos=*/0, /*willRetain=*/true,
+                            OFFLINE_PAYLOAD);
+  if (!ok) {
+    // Exponential backoff so a dead broker doesn't stall the loop every 5 s.
+    _backoffMs = _backoffMs ? min<uint32_t>(_backoffMs * 2, BACKOFF_MAX_MS) : BACKOFF_MIN_MS;
+    Serial.printf("[MQTT] Failed (rc=%d), retrying in %lu s\n",
+                  _client.state(), (unsigned long)(_backoffMs / 1000));
+    return false;
   }
-  _client.loop();
+
+  _backoffMs = 0;
+  Serial.println("[MQTT] Connected");
+  _client.subscribe(_tLearn.c_str());
+  _client.subscribe(_tCmd.c_str());
+  Serial.printf("[MQTT] Subscribed to %s, %s\n", _tLearn.c_str(), _tCmd.c_str());
+  if (_onConnect) _onConnect();
+  return true;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// publishStatus()
-// ────────────────────────────────────────────────────────────────────────────
-void MQTTHandler::publishStatus(const char* state,
-                                const String names[], uint8_t count) {
-  if (!_client.connected()) return;
+bool MQTTHandler::publishStatus(const String& json) {
+  if (!_client.connected()) return false;
+  return _client.publish(_tStatus.c_str(), json.c_str(), /*retain=*/true);
+}
 
+bool MQTTHandler::publishLearned(const String& slot, bool ok, uint16_t pulseCount,
+                                 const char* error) {
+  if (!_client.connected()) return false;
   JsonDocument doc;
-  doc["state"] = state;
-  doc["ip"]    = WiFi.localIP().toString();
-  doc["rssi"]  = (int)WiFi.RSSI();
-
-  JsonArray arr = doc["slots"].to<JsonArray>();
-  for (uint8_t i = 0; i < count; i++) {
-    if (names[i].length() > 0) {
-      arr.add(names[i]);
-    }
-  }
-
+  doc["slot"] = slot;
+  doc["ok"]   = ok;
+  if (ok) doc["pulses"] = pulseCount;
+  else    doc["error"]  = error ? error : "failed";
   String json;
   serializeJson(doc, json);
-  _client.publish(TOPIC_STATUS, json.c_str(), /*retain=*/true);
+  return _client.publish(_tLearned.c_str(), json.c_str());
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// publishLearned()
-// ────────────────────────────────────────────────────────────────────────────
-void MQTTHandler::publishLearned(const String& slot, uint16_t pulseCount) {
-  if (!_client.connected()) return;
-
-  JsonDocument doc;
-  doc["slot"]   = slot;
-  doc["pulses"] = pulseCount;
-
-  String json;
-  serializeJson(doc, json);
-  _client.publish(TOPIC_LEARNED, json.c_str());
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// isConnected()
-// ────────────────────────────────────────────────────────────────────────────
-bool MQTTHandler::isConnected() const {
-  return _client.connected();
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// reconnect() — attempt a single connection; caller retries on failure
-// ────────────────────────────────────────────────────────────────────────────
-void MQTTHandler::reconnect() {
-  Serial.printf("[MQTT] Connecting to %s:%u as %s\n",
-                _broker, _port, _clientId.c_str());
-
-  bool ok = _client.connect(
-    _clientId.c_str(),
-    /*user*/         nullptr,
-    /*pass*/         nullptr,
-    /*willTopic*/    TOPIC_STATUS,
-    /*willQos*/      0,
-    /*willRetain*/   true,
-    /*willMsg*/      "{\"state\":\"offline\"}"
-  );
-
-  if (ok) {
-    Serial.println("[MQTT] Connected");
-    subscribe();
-    // Immediately publish online status (no slots known here; caller will re-publish)
-    _client.publish(TOPIC_STATUS, "{\"state\":\"idle\"}", /*retain=*/true);
-  } else {
-    Serial.printf("[MQTT] Failed (rc=%d), retrying in 5 s\n",
-                  _client.state());
-  }
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// subscribe()
-// ────────────────────────────────────────────────────────────────────────────
-void MQTTHandler::subscribe() {
-  _client.subscribe(TOPIC_LEARN);
-  _client.subscribe(TOPIC_CMD);
-  Serial.printf("[MQTT] Subscribed to %s, %s\n", TOPIC_LEARN, TOPIC_CMD);
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// mqttCallback() — static, dispatches via singleton
-// ────────────────────────────────────────────────────────────────────────────
 void MQTTHandler::mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (!_instance) return;
 
-  // Build a null-terminated string from the payload
   String msg;
   msg.reserve(length);
-  for (unsigned int i = 0; i < length; i++) {
-    msg += (char)payload[i];
-  }
+  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
   msg.trim();
 
-  String t(topic);
   Serial.printf("[MQTT] Rx %s => \"%s\"\n", topic, msg.c_str());
 
-  if (t == TOPIC_LEARN && _instance->_onLearn) {
-    _instance->_onLearn(msg);
-  } else if (t == TOPIC_CMD && _instance->_onSend) {
-    _instance->_onSend(msg);
+  if (_instance->_tLearn == topic) {
+    if (_instance->_onLearn) _instance->_onLearn(msg);
+  } else if (_instance->_tCmd == topic) {
+    if (_instance->_onSend) _instance->_onSend(msg);
   }
 }

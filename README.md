@@ -1,6 +1,6 @@
 # FanSpitter
 
-Control ceiling fans via RF remote learning and MQTT commands. FanSpitter is a complete ESP32 firmware solution that captures RF signals from ceiling fan remotes, stores them locally, and exposes them over MQTT and a web UI for integration with smart home platforms like OpenHAB.
+Control ceiling fans via RF remote learning and MQTT commands. FanSpitter is ESP32 firmware that captures RF signals from ceiling fan remotes, stores them locally, and exposes them over MQTT and a web UI for integration with smart home platforms like OpenHAB.
 
 ## Overview
 
@@ -8,29 +8,28 @@ FanSpitter uses a **CC1101 RF transceiver** at **303 MHz OOK** (On-Off Keying) t
 - Capture and learn RF signals from your ceiling fan remote
 - Store up to **8 named signal slots** in persistent flash memory
 - Replay learned signals via bit-bang modulation
-- Expose signals via **MQTT topics** for OpenHAB or other home automation systems
+- Expose signals via **MQTT topics** for OpenHAB, Home Assistant, Node-RED
 - Provide a **web UI** for standalone control and learning
-
-Perfect for integrating old (non-smart) ceiling fans into modern home automation without replacing the remote or hardware.
 
 ## Features
 
-✅ **Zero-hardcode WiFi** — Captive portal (WiFiManager) for first-time setup  
-✅ **8-slot RF storage** — NVS flash memory for learned signals  
-✅ **2-frame confirmation** — Tolerance-based matching (±20%) to filter RF noise  
-✅ **MQTT integration** — Ready for OpenHAB, Home Assistant, Node-RED  
-✅ **Single-page web UI** — Learn, store, and trigger signals from your browser  
-✅ **Live status reporting** — JSON payload with device state, IP, signal strength  
-✅ **Last-Will-and-Testament** — Automatic offline status on disconnect  
+- **Captive-portal setup**: WiFi, MQTT broker, credentials and OTA password are entered on first boot. Nothing is hard-coded.
+- **8-slot RF storage** in NVS flash, kept across reboots and firmware updates
+- **2-frame confirmation** (±20%, min 50 µs) to reject RF noise while learning
+- **MQTT** with optional username/password, a configurable base topic, retained status and Last-Will "offline"
+- **Web UI and JSON API** at `http://fanspitter.local/`
+- **OTA updates** over WiFi (password-protected)
+- **Self-healing**: loop watchdog, reboots if WiFi stays down, MQTT reconnect with backoff, and it keeps serving web, MQTT and OTA even if the CC1101 is missing
+- **Factory reset** from the BOOT button
 
-## Hardware Requirements
+## Hardware
 
 | Component | Notes |
 |-----------|-------|
-| **ESP32 DevKit** | Any ESP32 with VSPI + free GPIO pins |
-| **CC1101 RF Module** | 26 MHz crystal (**not** 27 MHz clone) at 303 MHz |
-| **3.3V Stabilized Power** | CC1101 is sensitive to supply noise |
-| **Ceiling fan remote** | Any RF remote that uses OOK modulation |
+| **ESP32 DevKit** | Any ESP32 with VSPI + free GPIO pins (4 MB flash) |
+| **CC1101 module** | 26 MHz crystal (**not** a 27 MHz clone) |
+| **3.3 V supply** | CC1101 is sensitive to supply noise |
+| **Fan remote** | Any OOK remote near 303 MHz |
 
 ### Wiring (ESP32 ↔ CC1101)
 
@@ -38,243 +37,226 @@ Perfect for integrating old (non-smart) ceiling fans into modern home automation
 |-----------|-----------|----------|
 | VCC       | 3.3V      | Power |
 | GND       | GND       | Ground |
-| MOSI      | GPIO 23   | SPI Data (VSPI) |
-| MISO      | GPIO 19   | SPI Data (VSPI) |
-| SCK       | GPIO 18   | SPI Clock (VSPI) |
-| CSN       | GPIO 5    | Chip Select |
-| GDO0      | GPIO 2    | Data I/O (ISR RX, bit-bang TX) |
+| MOSI      | GPIO 23   | SPI (VSPI) |
+| MISO      | GPIO 19   | SPI (VSPI) |
+| SCK       | GPIO 18   | SPI (VSPI) |
+| CSN       | GPIO 5    | Chip select |
+| GDO0      | GPIO 2    | Data I/O (RX interrupt, TX bit-bang) |
+
+> **GPIO 2 caveat:** GPIO 2 is an ESP32 boot-strapping pin and drives the on-board LED on many DevKits. The firmware keeps GDO0 quiet and pulled low when idle, but if USB flashing ever fails with *"Wrong boot mode detected"*, move GDO0 to **GPIO 4** and add `-DPIN_GDO0=4` to `build_flags` in `platformio.ini`. All pins are overridable this way (see [`src/config.h`](src/config.h)).
 
 ## Installation
 
-### 1. Prerequisites
-- [PlatformIO CLI](https://platformio.org/install) or VSCode with PlatformIO extension
-- CC1101 module wired per the diagram above
-- WiFi network and MQTT broker (optional, but recommended)
+### 1. Build and flash over USB (first install)
 
-### 2. Clone and Build
+Requires [PlatformIO](https://platformio.org/install) (CLI or the VS Code extension).
+
 ```bash
-git clone https://github.com/yourusername/fanspitter.git
-cd fanspitter
 pio run -t upload
+pio device monitor
 ```
 
-### 3. First Boot — WiFi Configuration
-On first power, the device broadcasts AP `FanSpitter-Setup`:
-1. Connect phone/laptop to that AP
-2. Captive portal opens automatically
-3. Enter your WiFi SSID, password, and **MQTT broker IP** (or skip for web-only mode)
-4. Device reboots and connects to your network
+The first flash must be over USB. It writes the partition table (two 1.9 MB OTA slots). After that you can update over WiFi.
 
-Monitor serial output at **115200 baud** to see the assigned IP address.
+### 2. First boot: setup portal
+
+With no saved WiFi, the device opens an access point called **`FanSpitter-Setup`**:
+
+1. Join it from a phone or laptop. The captive portal opens.
+2. Choose your WiFi network and enter its password.
+3. Fill in the optional fields:
+
+| Field | Meaning |
+|-------|---------|
+| MQTT broker host/IP | Leave blank for web-only mode |
+| MQTT port | Default `1883` |
+| MQTT username / password | Leave blank for anonymous brokers |
+| MQTT base topic | Default `fanspitter`. Use a different one per device |
+| OTA update password | Required to enable WiFi updates. Leave blank to disable OTA |
+
+Password fields are never pre-filled (the setup AP is open). Leaving one blank keeps the stored value.
+
+4. The device joins your network and serves `http://fanspitter.local/` (or check the serial log for its IP).
+
+If saved WiFi is unreachable at boot (router rebooting, say), the portal opens for 3 minutes, then the device reboots and retries. If WiFi drops for 10 minutes while running, it reboots.
+
+### 3. Changing settings / factory reset
+
+Hold the **BOOT** button for 5–30 seconds, then release. This wipes WiFi and MQTT/OTA settings (**learned signals are kept**) and reboots into the setup portal. Holds longer than 30 s are ignored, so a USB-serial adapter holding GPIO 0 low can't wipe the device.
+
+### 4. Updating over WiFi (OTA)
+
+Requires an OTA password set in the portal.
+
+```bash
+FANSPITTER_OTA_PASSWORD='your-ota-password' pio run -e ota -t upload
+```
+
+The `ota` environment targets `fanspitter.local`. Override with `--upload-port <ip>` if mDNS doesn't resolve on your network.
 
 ## Usage
 
-### Learn a Signal
+### Learn a signal
 
-#### Via Web UI
-1. Open `http://fanspitter.local` (or the IP from serial output)
-2. Enter a slot name (e.g., `fan_high`, `light_toggle`)
-3. Click **"Start Learn"** — device enters RX mode for 30 seconds
-4. Press the remote button → "Frame 1 captured"
-5. Press again → "Confirmed and saved" (learns on 2nd identical press)
+Slot names are 1–32 characters of `A–Z a–z 0–9 _ -` (e.g. `fan_high`, `light-toggle`). Re-using a name overwrites that slot.
 
-#### Via MQTT
+**Web UI:** enter a name, click **Start Learn**, then press the remote button **twice**. The first press captures, the second confirms. You have 30 seconds.
+
+**MQTT:**
 ```bash
-mosquitto_pub -h <broker_ip> -t fanspitter/learn -m "fan_high"
-# Press remote button twice
-# Subscribe to see confirmation:
-mosquitto_sub -h <broker_ip> -t fanspitter/learned
-# Output: {"slot":"fan_high","pulses":84}
+mosquitto_pub -h <broker> -t fanspitter/learn -m "fan_high"
+# press the remote button twice, then:
+mosquitto_sub -h <broker> -t fanspitter/learned
+# {"slot":"fan_high","ok":true,"pulses":84}
 ```
 
-### Trigger a Learned Signal
+### Trigger a learned signal
 
-#### Via Web UI
-- Click **"Send"** next to any saved slot
+**Web UI:** click **Send** next to the slot.
 
-#### Via MQTT
+**MQTT:**
 ```bash
-mosquitto_pub -h <broker_ip> -t fanspitter/cmd -m "fan_high"
+mosquitto_pub -h <broker> -t fanspitter/cmd -m "fan_high"
 ```
 
-#### Via OpenHAB
-See [OpenHAB Integration](#openhab-integration) below.
+Each send replays the frame 3 times, 20 ms apart.
 
-## MQTT Topics
+## MQTT topics
 
-All payloads are JSON unless noted.
+`fanspitter` below is the configurable base topic.
 
-| Topic | Direction | Payload | Example |
-|-------|-----------|---------|---------|
-| `fanspitter/learn` | **Sub** | Slot name (string) | `fan_high` |
-| `fanspitter/cmd` | **Sub** | Slot name to execute | `fan_high` |
-| `fanspitter/status` | **Pub** | Device state + slots | `{"state":"idle","slots":["fan_high","light"],"ip":"192.168.1.100","rssi":-62}` |
-| `fanspitter/learned` | **Pub** | Confirmation after learn | `{"slot":"fan_high","pulses":84}` |
+| Topic | Dir | Payload |
+|-------|-----|---------|
+| `fanspitter/learn` | sub | slot name to learn |
+| `fanspitter/cmd` | sub | slot name to send |
+| `fanspitter/status` | pub, retained | status JSON (below); `{"state":"offline"}` via Last Will |
+| `fanspitter/learned` | pub | `{"slot":"fan_high","ok":true,"pulses":84}` or `{"slot":"fan_high","ok":false,"error":"timeout"}` |
 
-## OpenHAB Integration
+Status is published on every state change and every 60 s.
 
-### OH3/OH4 Thing Configuration
+### Status JSON
 
-Create a new MQTT Thing:
+Served at `GET /api/status` and published to `<base>/status`:
+
+```json
+{
+  "state": "idle",
+  "learnSecs": 0,
+  "slots": ["fan_high", "fan_med", "light_toggle"],
+  "slotCount": 3,
+  "maxSlots": 8,
+  "ip": "192.168.1.42",
+  "rssi": -58,
+  "mqtt": true,
+  "rf": true,
+  "ota": true,
+  "uptime": 12345,
+  "heap": 187432,
+  "version": "v1.0.0"
+}
+```
+
+`state` is `idle`, `learning`, `transmitting` (or `offline` from the Last Will). `rf: false` means the CC1101 didn't respond at boot. `version` comes from `git describe` at build time.
+
+## OpenHAB integration
 
 ```
 Thing mqtt:topic:fanspitter "FanSpitter" (mqtt:broker:localBroker) {
     Channels:
         Type string : cmd     [ commandTopic="fanspitter/cmd" ]
         Type string : learn   [ commandTopic="fanspitter/learn" ]
-        Type string : status  [ stateTopic="fanspitter/status",
-                                transformationPattern="JSONPATH:$.state" ]
+        Type string : state   [ stateTopic="fanspitter/status", transformationPattern="JSONPATH:$.state" ]
         Type string : learned [ stateTopic="fanspitter/learned" ]
 }
 ```
 
-### Create Items
-
 ```
-String FanHigh "Fan High" (gFan) { channel="mqtt:topic:fanspitter:cmd" }
-String FanMed  "Fan Medium" (gFan) { channel="mqtt:topic:fanspitter:cmd" }
-String FanOff  "Fan Off" (gFan) { channel="mqtt:topic:fanspitter:cmd" }
+String FanCmd   "Fan"              { channel="mqtt:topic:fanspitter:cmd" }
+String FanState "FanSpitter [%s]"  { channel="mqtt:topic:fanspitter:state" }
 ```
 
-### Send Command
+Sitemap buttons, one per learned slot:
 
 ```
-rule "Fan Control"
-when
-    Item FanHigh received command ON
-then
-    FanHigh.sendCommand("fan_high")
-end
+Switch item=FanCmd mappings=[fan_high="High", fan_med="Med", fan_off="Off", light_toggle="Light"]
 ```
 
-## API Reference
+## HTTP API
 
-### Endpoints (Web UI)
+| Method | Path | Body | Purpose |
+|--------|------|------|---------|
+| `GET` | `/` | | Web UI |
+| `GET` | `/api/status` | | Status JSON |
+| `GET` | `/api/slots` | | `["fan_high", …]` |
+| `POST` | `/api/learn` | `{"slot":"name"}` | Start learning |
+| `POST` | `/api/send` | `{"slot":"name"}` | Replay signal |
+| `DELETE` | `/api/slot` | `{"slot":"name"}` | Delete slot |
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/` | Serve single-page UI (HTML/JS/CSS) |
-| `GET` | `/api/slots` | List all saved slots |
-| `GET` | `/api/status` | Device state (JSON) |
-| `POST` | `/api/learn` | `{"slot":"name"}` — start learning |
-| `POST` | `/api/send` | `{"slot":"name"}` — replay signal |
-| `DELETE` | `/api/slot` | `{"slot":"name"}` — delete slot |
+Errors return `{"error":"…"}` with `400` (bad name/body), `404` (no such slot), `409` (busy learning), `503` (RF unavailable or queue full), or `507` (all 8 slots used).
 
-### Status JSON
+The web UI and API have **no authentication**. Keep the device on a trusted LAN or VLAN.
 
-```json
-{
-  "state": "idle",
-  "slots": ["fan_high", "fan_med", "light_toggle"],
-  "slotCount": 3,
-  "maxSlots": 8,
-  "ip": "192.168.1.42",
-  "rssi": -58,
-  "uptime": 12345
-}
-```
-
-## Technical Details
+## Technical details
 
 ### Architecture
 
-- **CC1101 driver** (`cc1101.h/cpp`) — SPI register control, MISO chip-ready polling
-- **RF learner** (`rf_learn.h/cpp`) — IRAM ISR pulse capture, 2-frame confirmation, bit-bang TX
-- **Signal storage** (`signal_store.h/cpp`) — NVS Preferences wrapper (8 slots, max 400 pulses/slot)
-- **MQTT handler** (`mqtt_handler.h/cpp`) — PubSubClient with auto-reconnect
-- **Web UI** (`web_ui.h/cpp`) — ESPAsyncWebServer + PROGMEM HTML/JS
+| File | Role |
+|------|------|
+| `main.cpp` | Orchestration: setup portal, command queue, status, OTA, watchdogs |
+| `cc1101.h/.cpp` | SPI driver and register table (26 MHz XO, 303 MHz, async OOK) |
+| `rf_learn.h/.cpp` | IRAM ISR pulse capture, 2-frame confirmation, bit-bang TX |
+| `pulse_match.h` | Pure frame-comparison logic (unit-tested) |
+| `slot_name.h` | Slot-name validation (unit-tested) |
+| `signal_store.h/.cpp` | Thread-safe NVS storage (8 slots × 400 pulses) |
+| `mqtt_handler.h/.cpp` | PubSubClient with auth, LWT and reconnect backoff |
+| `web_ui.h/.cpp` | ESPAsyncWebServer UI + JSON API |
+| `config.h` | Pins and tunables, all overridable with `-D` flags |
 
-### Key Implementation Notes
+### Threading
 
-1. **MISO chip-ready polling** — Always poll MISO low after CS assert before first SPI byte (prevents register corruption)
-2. **Crystal frequency** — Verify your CC1101 has a **26 MHz crystal**; 27 MHz clones shift the carrier ~3.5 MHz off-target
-3. **Confirmation algorithm** — Captures 2 frames and compares pulse-by-pulse with ±20% tolerance to filter RF noise
-4. **OOK polarity** — First TX pulse must match the captured polarity; system auto-detects this on boot
-5. **WiFi jitter** — 20% confirmation tolerance absorbs ESP32 WiFi DMA stalls (up to ~300 µs). For critical TX, disable WiFi PS: `esp_wifi_set_ps(WIFI_PS_NONE)`
-6. **NVS limits** — Maximum 400 pulses per slot (800 bytes) to stay within NVS namespace constraints
+The web server runs in the AsyncTCP task; everything else runs in the Arduino loop task. Web and MQTT requests are validated, then **queued** to the loop task. Only the loop task touches the radio, so a web request can't bit-bang RF with interrupts masked or race the learn state machine. `SignalStore` is mutex-protected and shared state is atomic.
+
+### Radio notes
+
+- **Crystal:** check that your CC1101 has a **26 MHz** crystal. A 27 MHz clone shifts the carrier ~12 MHz (to ~315 MHz).
+- **OOK power table:** `FREND0.PA_POWER = 1`, so `PATABLE[0] = 0x00` (carrier off for a `0`) and `PATABLE[1] = 0xC0` (≈ +10 dBm for a `1`).
+- **Idle:** the CC1101 sits in IDLE and the GDO0 interrupt is detached except while learning (RX) or sending (TX).
+- **TX timing:** interrupts on the loop core are masked per frame for clean timing. Frames over 200 ms are sent unmasked so the interrupt watchdog can't fire.
+- **Capture polarity:** the first stored pulse is assumed to be carrier-on (line idles low between frames), and TX starts HIGH.
+- **Storage:** max 400 pulses per slot.
+
+## Development
+
+```bash
+pio test -e native        # host unit tests (no hardware)
+pio run                   # firmware build
+pio device monitor        # serial log, with exception decoding
+```
+
+Platform and library versions are pinned in `platformio.ini`. Bump them deliberately and re-test on hardware.
+
+CI (`.gitea/workflows/build.yml`) runs the tests and build on every push and PR and uploads `firmware.bin`, `bootloader.bin` and `partitions.bin` as artifacts. It needs Gitea Actions enabled and a runner.
 
 ## Troubleshooting
 
-### CC1101 not detected
-```
-Error: CC1101 not found (part=0xFF)
-```
-- Check SPI wiring (MOSI, MISO, SCK, CSN)
-- Verify 3.3V supply (use oscilloscope to check for noise)
-- Try a different CC1101 module (some clones have poor quality)
+**`[CC1101] ERROR: unexpected chip ID`**: check SPI wiring (MOSI/MISO/SCK/CSN) and the 3.3 V supply. The device keeps running with `"rf": false` so you can still reach it.
 
-### WiFi AP doesn't appear
-- Check ESP32 power supply under load
-- Look for `FanSpitter-Setup` broadcast in WiFi scan (might appear after 10–30 seconds)
+**No `FanSpitter-Setup` AP**: check power under load. The AP can take 10–30 s to appear. If WiFi was configured but is unreachable, the portal only opens for 3 minutes per boot.
 
-### Remote signals not captured
-- Verify GDO0 is connected to GPIO 2
-- Check that your remote uses OOK modulation (this won't work with ASK or FSK)
-- Bring remote closer to CC1101 antenna during learning
-- Check the serial monitor for ISR frame captures
+**Signals not captured**: confirm GDO0 wiring, that the remote is OOK near 303 MHz, and hold it close to the antenna. Watch the serial log for `Frame 1 captured` / `Pulse N mismatch` lines.
 
-### MQTT connection fails
-- Verify broker IP/port entered in captive portal
-- Check firewall (default MQTT port 1883)
-- Look for error in serial output: `MQTT: connect failed (rc=...)`
+**Sends don't work but learning does**: confirm the crystal (above), try the remote's exact frequency, and check that `Transmitted N pulses x 3` appears in the log.
 
-## Building from Source
+**MQTT won't connect**: the log shows `[MQTT] Failed (rc=…)`. `rc=5` means bad credentials and `rc=-2` means the broker is unreachable. Retries back off up to 60 s.
 
-### Dependencies (auto-installed by PlatformIO)
-
-```ini
-[platformio.ini]
-lib_deps =
-    tzapu/WiFiManager @ ^2.0.17
-    knolleary/PubSubClient @ ^2.8
-    ESP32Async/ESPAsyncWebServer @ ^3.0.0
-    ESP32Async/AsyncTCP @ ^3.0.0
-    bblanchon/ArduinoJson @ ^7.0.0
-```
-
-### Compile and Upload
-```bash
-pio run -t upload
-```
-
-### Monitor Serial Output
-```bash
-pio device monitor -b 115200
-```
-
-## File Structure
-
-```
-fanspitter/
-├── platformio.ini                 — PlatformIO config
-├── src/
-│   ├── main.cpp                   — Orchestration + WiFiManager
-│   ├── cc1101.h / cc1101.cpp      — SPI driver + register table
-│   ├── rf_learn.h / rf_learn.cpp  — ISR pulse capture + TX replay
-│   ├── signal_store.h / .cpp      — NVS Preferences wrapper
-│   ├── mqtt_handler.h / .cpp      — PubSubClient integration
-│   └── web_ui.h / web_ui.cpp      — ESPAsyncWebServer UI
-└── README.md
-```
+**USB flashing fails ("Wrong boot mode")**: see the GPIO 2 caveat above, or update over WiFi instead.
 
 ## License
 
-[See LICENSE file](LICENSE)
-
-## Contributing
-
-Contributions welcome! Please fork and submit PRs. Known areas for enhancement:
-- Multi-frequency support
-- Signal filtering algorithms
-- Bluetooth/ZigBee gateway modes
+[MIT](LICENSE)
 
 ## References
 
 - [CC1101 Datasheet](https://www.ti.com/product/CC1101)
-- [ESP32 GPIO Reference](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/hw-reference/esp32_datasheet.pdf)
 - [PlatformIO Docs](https://docs.platformio.org/)
 - [OpenHAB MQTT Binding](https://www.openhab.org/addons/bindings/mqtt/)
-
----
-
-**Happy automating!** 🏠💡

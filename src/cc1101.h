@@ -91,15 +91,23 @@ public:
   // GDO0 becomes an OUTPUT from the CC1101 carrying raw OOK pulse data.
   void enterRX();
 
-  // Switch to TX: set IOCFG0 = ASYNC_TX, issue STX.
+  // Switch to TX: set IOCFG0 = ASYNC_TX, issue STX, wait until the chip
+  // reports MARCSTATE = TX. Returns false if it never got there.
   // GDO0 must then be driven as an OUTPUT by the MCU to inject raw OOK data.
-  void enterTX();
+  bool enterTX();
 
   // Place the chip in IDLE state; safe to call from any state.
   void setIdle();
 
   // Read MARCSTATE register (0x01=IDLE, 0x0D=RX, 0x13=TX, ...).
   uint8_t getMarcState();
+
+  // Poll MARCSTATE until it equals `state` or `timeoutUs` elapses.
+  bool waitForMarcState(uint8_t state, uint32_t timeoutUs);
+
+  static constexpr uint8_t MARCSTATE_IDLE = 0x01;
+  static constexpr uint8_t MARCSTATE_RX   = 0x0D;
+  static constexpr uint8_t MARCSTATE_TX   = 0x13;
 
   // Read RSSI and convert to signed dBm per CC1101 datasheet formula.
   int8_t getRSSI();

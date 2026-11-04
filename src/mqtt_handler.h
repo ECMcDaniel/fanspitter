@@ -5,52 +5,60 @@
 #include <functional>
 
 // ────────────────────────────────────────────────────────────────────────────
-// MQTTHandler — PubSubClient wrapper with reconnect logic and LWT
+// MQTTHandler — PubSubClient wrapper with reconnect, auth and LWT
 //
-// Topics:
-//   Sub  fanspitter/learn  — payload = slot name (e.g. "fan1_high")
-//   Sub  fanspitter/cmd    — payload = slot name to replay
-//   Pub  fanspitter/status — JSON {"state":"...","slots":[...],"ip":"...","rssi":-60}
-//   Pub  fanspitter/learned— JSON {"slot":"...","pulses":84}
+// Topics (<base> defaults to "fanspitter"):
+//   Sub  <base>/learn    — payload = slot name to learn
+//   Sub  <base>/cmd      — payload = slot name to replay
+//   Pub  <base>/status   — retained JSON status; LWT {"state":"offline"}
+//   Pub  <base>/learned  — JSON {"slot":"…","ok":true,"pulses":84}
+//                          or   {"slot":"…","ok":false,"error":"timeout"}
+//
+// Must only be used from the loop task.
 // ────────────────────────────────────────────────────────────────────────────
+struct MqttConfig {
+  String   host;        // empty = MQTT disabled
+  uint16_t port = 1883;
+  String   user;        // empty = anonymous
+  String   pass;
+  String   baseTopic = "fanspitter";
+};
+
 class MQTTHandler {
 public:
-  using SlotCb = std::function<void(const String& slot)>;
+  using SlotCb    = std::function<void(const String& slot)>;
+  using ConnectCb = std::function<void()>;
 
-  // broker: hostname or IP address string
-  MQTTHandler(const char* broker, uint16_t port = 1883);
+  explicit MQTTHandler(const MqttConfig& cfg);
 
-  // Call after WiFi is up.
-  void begin(const char* clientId, SlotCb onLearn, SlotCb onSend);
+  // Call after WiFi is up. onConnect fires after every (re)connect so the
+  // caller can publish fresh status.
+  void begin(const String& clientId, SlotCb onLearn, SlotCb onSend, ConnectCb onConnect);
 
   // Call every loop() iteration.
   void loop();
 
-  // Publish fanspitter/status with current state and slot list.
-  // names[] must have 'count' valid entries (can be called with count=0).
-  void publishStatus(const char* state,
-                     const String names[], uint8_t count);
+  bool publishStatus(const String& json);
+  bool publishLearned(const String& slot, bool ok, uint16_t pulseCount, const char* error);
 
-  // Publish fanspitter/learned after a successful capture.
-  void publishLearned(const String& slot, uint16_t pulseCount);
-
-  bool isConnected() const;
+  bool isConnected() { return _client.connected(); }
+  bool enabled() const { return _cfg.host.length() > 0; }
 
 private:
-  const char*   _broker;
-  uint16_t      _port;
+  MqttConfig    _cfg;
   String        _clientId;
+  String        _tLearn, _tCmd, _tStatus, _tLearned;
   WiFiClient    _wifiClient;
   PubSubClient  _client;
-  unsigned long _lastReconnectMs;
+  unsigned long _lastAttemptMs = 0;
+  uint32_t      _backoffMs     = 0;
 
-  SlotCb _onLearn;
-  SlotCb _onSend;
+  SlotCb    _onLearn;
+  SlotCb    _onSend;
+  ConnectCb _onConnect;
 
-  // Singleton for the static PubSubClient callback (only one MQTTHandler instance)
   static MQTTHandler* _instance;
   static void mqttCallback(char* topic, byte* payload, unsigned int length);
 
-  void reconnect();
-  void subscribe();
+  bool reconnect();
 };

@@ -1,0 +1,50 @@
+# Gitea Actions (GitHub-compatible syntax). Requires Actions to be enabled for
+# the repo and an act_runner registered with the "ubuntu-latest" label.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags so `git describe` stamps the version
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Unit tests (host)
+        run: pio test -e native
+
+      - name: Build firmware
+        run: pio run -e esp32dev
+
+      - name: Collect binaries
+        run: |
+          mkdir -p dist
+          cp .pio/build/esp32dev/firmware.bin   dist/fanspitter-firmware.bin
+          cp .pio/build/esp32dev/bootloader.bin dist/bootloader.bin
+          cp .pio/build/esp32dev/partitions.bin dist/partitions.bin
+          (cd dist && sha256sum *.bin > SHA256SUMS)
+
+      # v3 for compatibility with Gitea's artifact API
+      - uses: actions/upload-artifact@v3
+        with:
+          name: fanspitter-${{ github.sha }}
+          path: dist/

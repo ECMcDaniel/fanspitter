@@ -23,7 +23,7 @@ const uint8_t CC1101::CONFIG_TABLE[][2] = {
   { CC1101Reg::AGCCTRL2, 0xC7 },  // OOK MAGN_TARGET = 33 dB
   { CC1101Reg::AGCCTRL1, 0x40 },  // CS relative threshold
   { CC1101Reg::AGCCTRL0, 0xB2 },  // OOK AGC hysteresis / wait time
-  { CC1101Reg::FREND0,   0x11 },  // OOK TX: PA table index 0 for '1', 0 for '0'
+  { CC1101Reg::FREND0,   0x11 },  // PA_POWER=1: OOK '1' → PATABLE[1], '0' → PATABLE[0]
   { CC1101Reg::FSCAL3,   0xEA },  // ─┐
   { CC1101Reg::FSCAL2,   0x2A },  //  │ Calibration constants from SmartRF Studio
   { CC1101Reg::FSCAL1,   0x00 },  //  │ (valid for 26 MHz XO, 303 MHz)
@@ -64,9 +64,12 @@ bool CC1101::begin() {
 
   loadRegisterTable();
 
-  // Write maximum TX output power (0xC0 ≈ +10 dBm) to PATABLE[0]
-  const uint8_t pa = 0xC0;
-  spiWriteBurst(CC1101Reg::PATABLE, &pa, 1);
+  // OOK power table. With FREND0.PA_POWER = 1 the modulator uses PATABLE[0]
+  // for a '0' (carrier off) and PATABLE[1] for a '1' (carrier on), so index 0
+  // must be 0x00 and index 1 the output power (0xC0 ≈ +10 dBm @ 315 MHz band).
+  // Writing 0xC0 to index 0 alone would key the carrier on every LOW instead.
+  const uint8_t pa[2] = { 0x00, 0xC0 };
+  spiWriteBurst(CC1101Reg::PATABLE, pa, sizeof(pa));
 
   // Calibrate the frequency synthesiser
   spiStrobe(CC1101Strobe::SCAL);
@@ -80,9 +83,21 @@ void CC1101::enterRX() {
   spiStrobe(CC1101Strobe::SRX);
 }
 
-void CC1101::enterTX() {
+bool CC1101::enterTX() {
   spiWriteReg(CC1101Reg::IOCFG0, IOCFG0_ASYNC_TX);
   spiStrobe(CC1101Strobe::STX);
+  // From IDLE the chip auto-calibrates (MCSM0.FS_AUTOCAL) before the PA turns
+  // on (~0.8 ms). Wait for MARCSTATE = TX instead of guessing a delay.
+  return waitForMarcState(MARCSTATE_TX, 5000);
+}
+
+bool CC1101::waitForMarcState(uint8_t state, uint32_t timeoutUs) {
+  uint32_t start = micros();
+  while (getMarcState() != state) {
+    if ((uint32_t)(micros() - start) > timeoutUs) return false;
+    delayMicroseconds(50);
+  }
+  return true;
 }
 
 void CC1101::setIdle() {

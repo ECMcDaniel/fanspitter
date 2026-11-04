@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "rf_learn.h"  // for RF_MAX_PULSES
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -13,6 +15,9 @@
 //   Namespace "fs_s0" … "fs_s7"
 //     "cnt"         UShort   pulse count
 //     "data"        Bytes    raw uint16_t[] pulse widths
+//
+// Thread-safe: every public method takes an internal mutex, so the web
+// server task can read while the loop task writes.
 // ────────────────────────────────────────────────────────────────────────────
 class SignalStore {
 public:
@@ -20,42 +25,36 @@ public:
 
   SignalStore() = default;
 
-  // Open NVS namespaces; call once from setup().
+  // Create the mutex and load slot names from NVS; call once from setup().
   void begin();
 
-  // Return number of occupied slots.
   uint8_t count() const;
+  bool    isFull() const { return count() >= MAX_SLOTS; }
 
-  // Copy all slot names into names[0…MAX_SLOTS-1].
-  // Empty String entries are unused slots.
+  // Copy all slot names into names[0…MAX_SLOTS-1]. Empty entries are unused.
   void listNames(String names[MAX_SLOTS]) const;
 
-  // Save a signal under name.
-  // If name already exists, its data is overwritten.
-  // Returns false if name is new and all 8 slots are full.
+  // Save a signal under name (overwrites if it exists).
+  // Returns false if the name is new and all slots are full, or NVS fails.
   bool save(const String& name, const uint16_t* pulses, uint16_t pulseCount);
 
-  // Load a signal into outBuf.
-  // Returns the number of pulses copied, or 0 if name not found.
+  // Load a signal into outBuf. Returns pulses copied, or 0 if not found.
   uint16_t load(const String& name, uint16_t* outBuf, uint16_t maxLen) const;
 
-  // Delete slot by name.
-  // Returns false if name not found.
+  // Delete slot by name. Returns false if not found.
   bool remove(const String& name);
 
-  // Return true if a slot with that name exists.
   bool exists(const String& name) const;
 
 private:
-  // Find slot index (0‥7) for a name, or -1 if not found.
-  int findSlot(const String& name) const;
-
-  // Return first slot index with an empty name, or -1 if all occupied.
-  int freeSlot() const;
-
-  // Build NVS namespace string for slot index: "fs_s0" … "fs_s7".
+  // Unlocked helpers — caller must hold _mtx.
+  int    findSlot(const String& name) const;
+  int    freeSlot() const;
+  uint8_t countUnlocked() const;
   static String slotNS(uint8_t idx);
 
-  // Slot names cached in RAM for fast lookup.
   String _names[MAX_SLOTS];
+  mutable SemaphoreHandle_t _mtx = nullptr;
+
+  friend class StoreLock;
 };

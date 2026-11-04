@@ -6,65 +6,64 @@
 // ────────────────────────────────────────────────────────────────────────────
 // Pulse capture limits
 // ────────────────────────────────────────────────────────────────────────────
-static constexpr uint16_t RF_MAX_PULSES      = 400;   // max pulses per frame
-static constexpr uint32_t RF_FRAME_GAP_US    = 10000; // gap > 10 ms = end-of-frame
-static constexpr uint16_t RF_MIN_PULSES      = 10;    // discard frames shorter than this
-static constexpr uint8_t  RF_CONFIRM_TOL_PCT = 20;    // ±20% tolerance for confirmation
+static constexpr uint16_t RF_MAX_PULSES       = 400;   // max pulses per frame
+static constexpr uint32_t RF_FRAME_GAP_US     = 10000; // gap > 10 ms = end-of-frame
+static constexpr uint16_t RF_GLITCH_US        = 50;    // ignore edges closer than this
+static constexpr uint16_t RF_MIN_PULSES       = 10;    // discard frames shorter than this
+static constexpr uint8_t  RF_CONFIRM_TOL_PCT  = 20;    // ±20% tolerance for confirmation
+static constexpr uint16_t RF_CONFIRM_TOL_MIN_US = 50;  // …but never tighter than 50 µs
+static constexpr uint8_t  RF_CONFIRM_MAX_LEN_DIFF = 2; // allowed pulse-count difference
 static constexpr uint32_t RF_LEARN_TIMEOUT_MS = 30000; // max time in learn mode (ms)
-static constexpr uint8_t  RF_TX_REPEATS      = 3;     // how many times to replay a signal
+static constexpr uint8_t  RF_TX_REPEATS       = 3;     // how many times to replay a signal
+static constexpr uint32_t RF_TX_GAP_MS        = 20;    // gap between repeats
+// Frames longer than this are sent with interrupts enabled (more jitter) so
+// the 300 ms interrupt watchdog can never fire.
+static constexpr uint32_t RF_TX_MAX_MASKED_US = 200000;
 
 // ────────────────────────────────────────────────────────────────────────────
-// ISR ring buffer (lives in DRAM, shared between ISR and main loop)
-// ────────────────────────────────────────────────────────────────────────────
-struct PulseRingBuffer {
-  volatile uint16_t buf[RF_MAX_PULSES];
-  volatile uint16_t head;       // ISR writes
-  volatile uint16_t tail;       // main loop reads
-  volatile bool     frameReady; // ISR sets when gap detected
-  volatile bool     overflow;   // ISR sets on ring-buffer wraparound
-  volatile uint32_t lastEdgeUs; // timestamp of last edge (µs)
-};
-
-// ────────────────────────────────────────────────────────────────────────────
-// RFLearn — capture & replay class
+// RFLearn — capture & replay
+//
+// The CC1101 is kept in IDLE except while learning (RX) or transmitting (TX),
+// and the GDO0 interrupt is only attached while learning. This keeps the
+// receiver's noise output from interrupting the CPU all day and keeps GDO0
+// quiet (it is a strapping pin on the default wiring).
+//
+// All methods must be called from the same task (the Arduino loop task).
 // ────────────────────────────────────────────────────────────────────────────
 class RFLearn {
 public:
   enum class State { IDLE, LEARNING, CONFIRMING, TRANSMITTING };
 
-  using DoneCallback = std::function<void(bool ok, const String& reason)>;
+  using DoneCallback = std::function<void(bool ok, const char* reason)>;
 
   // cc1101 must be initialised (cc1101.begin()) before calling begin() here.
   RFLearn(CC1101& cc1101, uint8_t gdo0Pin);
 
-  // Attach the pin-change ISR and put the CC1101 into RX mode.
-  // Call once from setup().
+  // Put the radio in IDLE and configure GDO0. Call once from setup().
   void begin();
 
   // Drive the state machine — call on every iteration of loop().
   void process();
 
-  // Request entry into learn mode.
-  // Returns false if not currently IDLE (busy).
+  // Enter learn mode (radio → RX, ISR attached).
+  // Returns false if not currently IDLE.
   bool startLearn();
 
-  // Request signal replay from a pulse array (e.g. loaded from SignalStore).
-  // Returns false if not currently IDLE.
-  bool startTransmit(const uint16_t* pulses, uint16_t count);
+  // Abort learn mode without invoking the learn callback.
+  void cancelLearn();
+
+  // Replay a pulse array (e.g. loaded from SignalStore). Blocking: returns
+  // after all repeats have been sent. Returns false if busy or the radio
+  // failed to enter TX.
+  bool transmit(const uint16_t* pulses, uint16_t count);
 
   State getState() const { return _state; }
 
-  // After a successful learn (state returns to IDLE from CONFIRMING),
-  // call this to copy the confirmed pulses out.
+  // After a successful learn, copy the confirmed pulses out.
   // Returns count of pulses, or 0 if no confirmed signal is pending.
   uint16_t getConfirmedPulses(uint16_t* outBuf, uint16_t maxLen) const;
 
-  // Callbacks
-  void onLearnDone(DoneCallback cb)    { _learnDoneCb   = cb; }
-  void onTransmitDone(DoneCallback cb) { _txDoneCb      = cb; }
-
-  // ── Singleton accessor used by the static ISR ───────────────────────────
-  static RFLearn* instance;
+  void onLearnDone(DoneCallback cb) { _learnDoneCb = cb; }
 
 private:
   CC1101&  _cc;
@@ -79,28 +78,15 @@ private:
   // ── Confirmed signal ─────────────────────────────────────────────────────
   uint16_t _confirmedBuf[RF_MAX_PULSES];
   uint16_t _confirmedLen;
-  bool     _confirmedPending;          // true until caller calls getConfirmedPulses()
+  bool     _confirmedPending;
 
-  // ── TX replay ────────────────────────────────────────────────────────────
-  const uint16_t* _txPulses;
-  uint16_t        _txCount;
-
-  // ── Timing ───────────────────────────────────────────────────────────────
   unsigned long _learnStartMs;
+  DoneCallback  _learnDoneCb;
 
-  // ── Callbacks ────────────────────────────────────────────────────────────
-  DoneCallback _learnDoneCb;
-  DoneCallback _txDoneCb;
-
-  // ── Private helpers ──────────────────────────────────────────────────────
+  void finishLearn(bool ok, const char* reason);
   void drainFrameFromRingBuffer();   // copies ISR → _capture[_captureCount]
   bool confirmFrames();              // compare _capture[0] vs _capture[1]
-  void doTransmit();                 // blocking bit-bang TX (repeats RF_TX_REPEATS times)
+  void stopRx();
   void attachISR();
   void detachISR();
 };
-
-// ────────────────────────────────────────────────────────────────────────────
-// ISR — defined in rf_learn.cpp, declared here so the linker can see it
-// ────────────────────────────────────────────────────────────────────────────
-void IRAM_ATTR gdo0IsrHandler();

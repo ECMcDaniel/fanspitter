@@ -2,7 +2,9 @@
 #include <ArduinoJson.h>
 
 // ────────────────────────────────────────────────────────────────────────────
-// Embedded page — stored in flash (PROGMEM)
+// Embedded page — lives in flash and is streamed without copying to RAM.
+// Slot names are validated server-side to [A-Za-z0-9_-] and are only ever
+// inserted into the DOM via textContent / dataset, never as HTML or JS.
 // ────────────────────────────────────────────────────────────────────────────
 static const char HTML_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html lang="en"><head>
@@ -13,24 +15,24 @@ static const char HTML_PAGE[] PROGMEM = R"rawliteral(
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:1rem;max-width:600px;margin:0 auto}
 h1{font-size:1.5rem;color:var(--accent);margin-bottom:.25rem}
-.meta{font-size:.8rem;color:var(--sub);margin-bottom:1.2rem}
+.meta{font-size:.8rem;color:var(--sub);margin-bottom:1.2rem;word-break:break-word}
 .chip{display:inline-block;padding:.2em .7em;border-radius:99px;font-size:.75rem;font-weight:700;background:#333;color:var(--txt);margin-left:.5rem;vertical-align:middle}
 .chip.idle{background:#1e4d2b;color:var(--ok)}
 .chip.learning{background:#4d3a1e;color:#fa0}
 .chip.transmitting{background:#1e2e4d;color:#6af}
-.chip.offline{background:#4d1e1e;color:#f66}
+.chip.offline,.chip.error{background:#4d1e1e;color:#f66}
 section{background:var(--card);border-radius:8px;padding:1rem;margin-bottom:1rem}
 section h2{font-size:1rem;margin-bottom:.75rem;color:var(--sub)}
 .row{display:flex;gap:.5rem;align-items:center}
-input[type=text]{flex:1;padding:.5rem .75rem;border-radius:6px;border:1px solid #333;background:#111;color:var(--txt);font-size:.9rem}
+.hint{font-size:.7rem;color:var(--sub);margin-top:.4rem}
+input[type=text]{flex:1;min-width:0;padding:.5rem .75rem;border-radius:6px;border:1px solid #333;background:#111;color:var(--txt);font-size:.9rem}
 input[type=text]:focus{outline:none;border-color:var(--accent)}
 button{padding:.5rem 1rem;border-radius:6px;border:none;cursor:pointer;font-size:.85rem;font-weight:600;transition:.15s}
+button:hover{opacity:.85}
+button:disabled{opacity:.4;cursor:not-allowed}
 .btn-learn{background:var(--accent);color:#fff}
-.btn-learn:hover{opacity:.85}
 .btn-send{background:#1e4d2b;color:var(--ok)}
-.btn-send:hover{opacity:.85}
 .btn-del{background:#4d1e1e;color:#f66}
-.btn-del:hover{opacity:.85}
 #progress-wrap{margin-top:.75rem;display:none}
 progress{width:100%;height:8px;border-radius:4px;appearance:none}
 progress::-webkit-progress-bar{background:#333;border-radius:4px}
@@ -38,7 +40,7 @@ progress::-webkit-progress-value{background:#fa0;border-radius:4px}
 #progress-label{font-size:.75rem;color:#fa0;margin-top:.25rem}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:.75rem;color:var(--sub);padding:.3rem .5rem;border-bottom:1px solid #333}
-td{padding:.5rem;font-size:.85rem;border-bottom:1px solid #222}
+td{padding:.5rem;font-size:.85rem;border-bottom:1px solid #222;word-break:break-all}
 tr:last-child td{border-bottom:none}
 .empty{text-align:center;color:var(--sub);padding:1.5rem}
 .toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:.5rem 1.2rem;border-radius:6px;font-size:.85rem;opacity:0;transition:.3s;pointer-events:none;z-index:99}
@@ -49,183 +51,169 @@ tr:last-child td{border-bottom:none}
 <section>
 <h2>Learn New Signal</h2>
 <div class="row">
-<input type="text" id="sname" placeholder="slot name (e.g. fan_high)" maxlength="14">
-<button class="btn-learn" onclick="startLearn()">Start&nbsp;Learn</button>
+<input type="text" id="sname" placeholder="slot name (e.g. fan_high)" maxlength="32" pattern="[A-Za-z0-9_\-]{1,32}" autocomplete="off">
+<button class="btn-learn" id="learn">Start&nbsp;Learn</button>
 </div>
+<div class="hint">Letters, digits, _ and - only. Re-using a name overwrites it.</div>
 <div id="progress-wrap">
 <progress id="prog" max="30" value="30"></progress>
-<div id="progress-label">Waiting for remote... <span id="secs"></span>s</div>
+<div id="progress-label">Press the remote button twice... <span id="secs"></span>s</div>
 </div>
 </section>
 <section>
-<h2>Saved Signals</h2>
+<h2>Saved Signals <span id="count"></span></h2>
 <table><thead><tr><th>Name</th><th>Send</th><th>Delete</th></tr></thead>
 <tbody id="slots"></tbody></table>
 </section>
 <div class="toast" id="toast"></div>
 <script>
-let lastState='';
+const $=id=>document.getElementById(id);
+let lastSlots='';
 function fetchStatus(){
   fetch('/api/status').then(r=>r.json()).then(j=>{
-    lastState=j.state;
-    const chip=document.getElementById('chip');
-    chip.textContent=j.state.toUpperCase();
-    chip.className='chip '+j.state;
-    document.getElementById('meta').textContent=
-      'IP: '+(j.ip||'?')+'  |  MQTT: '+(j.mqtt?'✓':'✗')+'  |  RSSI: '+(j.rssi||'?')+'dBm';
+    const st=j.rf===false?'error':j.state;
+    $('chip').textContent=j.rf===false?'RF ERROR':j.state.toUpperCase();
+    $('chip').className='chip '+st;
+    $('meta').textContent='IP: '+(j.ip||'?')+'  |  MQTT: '+(j.mqtt?'✓':'✗')+
+      '  |  RSSI: '+(j.rssi||'?')+' dBm  |  fw '+(j.version||'?');
+    $('count').textContent='('+(j.slotCount||0)+'/'+(j.maxSlots||8)+')';
     renderSlots(j.slots||[]);
-    if(j.state==='learning'&&j.learnSecs>0){
-      document.getElementById('progress-wrap').style.display='block';
-      document.getElementById('prog').value=j.learnSecs;
-      document.getElementById('secs').textContent=j.learnSecs;
-    } else {
-      document.getElementById('progress-wrap').style.display='none';
-    }
-  }).catch(()=>{});
+    const learning=j.state==='learning';
+    $('learn').disabled=learning||j.rf===false;
+    $('progress-wrap').style.display=learning?'block':'none';
+    if(learning){$('prog').value=j.learnSecs;$('secs').textContent=j.learnSecs;}
+  }).catch(()=>{$('chip').textContent='OFFLINE';$('chip').className='chip offline';});
 }
 function renderSlots(slots){
-  const tb=document.getElementById('slots');
-  if(!slots.length){tb.innerHTML='<tr><td colspan="3" class="empty">No signals saved yet.</td></tr>';return;}
-  tb.innerHTML=slots.map(n=>`<tr>
-<td>${esc(n)}</td>
-<td><button class="btn-send" onclick="sendSlot('${esc(n)}')">Send</button></td>
-<td><button class="btn-del" onclick="delSlot('${esc(n)}')">Delete</button></td>
-</tr>`).join('');
+  const key=JSON.stringify(slots);
+  if(key===lastSlots)return;
+  lastSlots=key;
+  const tb=$('slots');
+  tb.replaceChildren();
+  if(!slots.length){
+    const tr=tb.insertRow(),td=tr.insertCell();
+    td.colSpan=3;td.className='empty';td.textContent='No signals saved yet.';
+    return;
+  }
+  for(const n of slots){
+    const tr=tb.insertRow();
+    tr.insertCell().textContent=n;
+    for(const [cls,label,act] of [['btn-send','Send','send'],['btn-del','Delete','del']]){
+      const b=document.createElement('button');
+      b.className=cls;b.textContent=label;b.dataset.act=act;b.dataset.name=n;
+      tr.insertCell().appendChild(b);
+    }
+  }
 }
-function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function toast(msg,ok=true){
-  const t=document.getElementById('toast');
+  const t=$('toast');
   t.textContent=msg;t.style.background=ok?'#1e4d2b':'#4d1e1e';
-  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);
+  t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2500);
 }
-async function startLearn(){
-  const name=document.getElementById('sname').value.trim();
-  if(!name){toast('Enter a slot name',false);return;}
-  const r=await fetch('/api/learn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:name})});
-  if(r.ok)toast('Learning started — press remote twice');
-  else{const j=await r.json();toast(j.error||'Error',false);}
+async function api(method,path,slot){
+  try{
+    const r=await fetch(path,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({slot})});
+    const j=await r.json().catch(()=>({}));
+    return {ok:r.ok,error:j.error||('HTTP '+r.status)};
+  }catch(e){return {ok:false,error:'device unreachable'};}
+}
+$('learn').onclick=async()=>{
+  const name=$('sname').value.trim();
+  if(!/^[A-Za-z0-9_-]{1,32}$/.test(name)){toast('Use 1-32 letters, digits, _ or -',false);return;}
+  const r=await api('POST','/api/learn',name);
+  toast(r.ok?'Learning: press the remote button twice':r.error,r.ok);
   fetchStatus();
-}
-async function sendSlot(name){
-  const r=await fetch('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:name})});
-  if(r.ok)toast('Signal sent: '+name);
-  else{const j=await r.json();toast(j.error||'Error',false);}
-}
-async function delSlot(name){
-  if(!confirm('Delete "'+name+'"?'))return;
-  const r=await fetch('/api/slot',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:name})});
-  if(r.ok)toast('Deleted: '+name);
-  else{const j=await r.json();toast(j.error||'Error',false);}
-  fetchStatus();
-}
+};
+$('sname').addEventListener('keydown',e=>{if(e.key==='Enter')$('learn').click();});
+$('slots').addEventListener('click',async e=>{
+  const b=e.target.closest('button');
+  if(!b)return;
+  const name=b.dataset.name;
+  if(b.dataset.act==='send'){
+    const r=await api('POST','/api/send',name);
+    toast(r.ok?'Sent: '+name:r.error,r.ok);
+  }else{
+    if(!confirm('Delete "'+name+'"?'))return;
+    const r=await api('DELETE','/api/slot',name);
+    toast(r.ok?'Deleted: '+name:r.error,r.ok);
+    fetchStatus();
+  }
+});
 fetchStatus();
 setInterval(fetchStatus,2000);
 </script></body></html>
 )rawliteral";
 
-// ────────────────────────────────────────────────────────────────────────────
-// Constructor
-// ────────────────────────────────────────────────────────────────────────────
-WebUI::WebUI(AsyncWebServer& server, SignalStore& store)
-  : _server(server), _store(store) {}
-
-// ────────────────────────────────────────────────────────────────────────────
-// begin()
-// ────────────────────────────────────────────────────────────────────────────
-void WebUI::begin(SlotCb    onLearn,
-                  SlotCb    onSend,
-                  DeleteCb  onDelete,
-                  StatusJson statusProvider) {
-  _onLearn        = onLearn;
-  _onSend         = onSend;
-  _onDelete       = onDelete;
-  _statusProvider = statusProvider;
-  registerRoutes();
+static int httpCodeFor(CmdResult r) {
+  switch (r) {
+    case CmdResult::OK:             return 200;
+    case CmdResult::INVALID_NAME:   return 400;
+    case CmdResult::NOT_FOUND:      return 404;
+    case CmdResult::BUSY:           return 409;
+    case CmdResult::STORE_FULL:     return 507;
+    case CmdResult::QUEUE_FULL:     return 503;
+    case CmdResult::RF_UNAVAILABLE: return 503;
+  }
+  return 500;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// registerRoutes()
-// ────────────────────────────────────────────────────────────────────────────
-void WebUI::registerRoutes() {
+static void sendError(AsyncWebServerRequest* req, int code, const char* msg) {
+  JsonDocument doc;
+  doc["error"] = msg;
+  String body;
+  serializeJson(doc, body);
+  req->send(code, "application/json", body);
+}
 
-  // ── GET / ────────────────────────────────────────────────────────────────
+void WebUI::begin(CommandCb onLearn, CommandCb onSend, CommandCb onDelete,
+                  JsonCb statusJson, JsonCb slotsJson) {
+  _onLearn    = onLearn;
+  _onSend     = onSend;
+  _onDelete   = onDelete;
+  _statusJson = statusJson;
+  _slotsJson  = slotsJson;
+
   _server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
-    req->send_P(200, "text/html", HTML_PAGE);
+    req->send(200, "text/html", (const uint8_t*)HTML_PAGE, strlen_P(HTML_PAGE));
   });
 
-  // ── GET /api/status ──────────────────────────────────────────────────────
-  _server.on("/api/status", HTTP_GET,
-    [this](AsyncWebServerRequest* req) {
-      String json = _statusProvider ? _statusProvider() : "{}";
-      req->send(200, "application/json", json);
-    });
+  _server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest* req) {
+    AsyncWebServerResponse* res =
+      req->beginResponse(200, "application/json", _statusJson ? _statusJson() : String("{}"));
+    res->addHeader("Cache-Control", "no-store");
+    req->send(res);
+  });
 
-  // ── GET /api/slots ───────────────────────────────────────────────────────
-  _server.on("/api/slots", HTTP_GET,
-    [this](AsyncWebServerRequest* req) {
-      JsonDocument doc;
-      JsonArray arr = doc.to<JsonArray>();
-      String names[SignalStore::MAX_SLOTS];
-      _store.listNames(names);
-      for (uint8_t i = 0; i < SignalStore::MAX_SLOTS; i++) {
-        if (names[i].length() > 0) arr.add(names[i]);
-      }
-      String json;
-      serializeJson(doc, json);
-      req->send(200, "application/json", json);
-    });
+  _server.on("/api/slots", HTTP_GET, [this](AsyncWebServerRequest* req) {
+    req->send(200, "application/json", _slotsJson ? _slotsJson() : String("[]"));
+  });
 
-  // ── Reusable send helper ─────────────────────────────────────────────────
-  auto sendJson = [](AsyncWebServerRequest* req, int code, const char* msg) {
-    String body = "{\"error\":\"";
-    body += msg;
-    body += "\"}";
-    req->send(code, "application/json", body);
-  };
+  addCommandRoute("/api/learn", HTTP_POST,   &_onLearn);
+  addCommandRoute("/api/send",  HTTP_POST,   &_onSend);
+  addCommandRoute("/api/slot",  HTTP_DELETE, &_onDelete);
 
-  // ── POST /api/learn ──────────────────────────────────────────────────────
-  auto* learnH = new AsyncCallbackJsonWebHandler("/api/learn",
-    [this, sendJson](AsyncWebServerRequest* req, JsonVariant& body) {
-      if (!body.is<JsonObject>()) { req->send(400, "application/json", "{\"error\":\"bad json\"}"); return; }
-      String slot = body["slot"].as<String>();
-      slot.trim();
-      if (slot.length() == 0) { sendJson(req, 400, "slot required"); return; }
-      if (_onLearn) _onLearn(slot);
-      req->send(200, "application/json", "{\"ok\":true}");
-    });
-  learnH->setMethod(HTTP_POST);
-  _server.addHandler(learnH);
-
-  // ── POST /api/send ───────────────────────────────────────────────────────
-  auto* sendH = new AsyncCallbackJsonWebHandler("/api/send",
-    [this, sendJson](AsyncWebServerRequest* req, JsonVariant& body) {
-      if (!body.is<JsonObject>()) { req->send(400, "application/json", "{\"error\":\"bad json\"}"); return; }
-      String slot = body["slot"].as<String>();
-      slot.trim();
-      if (slot.length() == 0) { sendJson(req, 400, "slot required"); return; }
-      if (!_store.exists(slot)) { sendJson(req, 404, "slot not found"); return; }
-      if (_onSend) _onSend(slot);
-      req->send(200, "application/json", "{\"ok\":true}");
-    });
-  sendH->setMethod(HTTP_POST);
-  _server.addHandler(sendH);
-
-  // ── DELETE /api/slot ─────────────────────────────────────────────────────
-  auto* delH = new AsyncCallbackJsonWebHandler("/api/slot",
-    [this, sendJson](AsyncWebServerRequest* req, JsonVariant& body) {
-      if (!body.is<JsonObject>()) { req->send(400, "application/json", "{\"error\":\"bad json\"}"); return; }
-      String slot = body["slot"].as<String>();
-      slot.trim();
-      if (slot.length() == 0) { sendJson(req, 400, "slot required"); return; }
-      if (!_store.remove(slot)) { sendJson(req, 404, "slot not found"); return; }
-      if (_onDelete) _onDelete(slot);
-      req->send(200, "application/json", "{\"ok\":true}");
-    });
-  delH->setMethod(HTTP_DELETE);
-  _server.addHandler(delH);
-
-  // ── 404 ──────────────────────────────────────────────────────────────────
   _server.onNotFound([](AsyncWebServerRequest* req) {
-    req->send(404, "application/json", "{\"error\":\"not found\"}");
+    sendError(req, 404, "not found");
   });
+}
+
+void WebUI::addCommandRoute(const char* path, WebRequestMethodComposite method, CommandCb* cb) {
+  auto* h = new AsyncCallbackJsonWebHandler(path,
+    [cb](AsyncWebServerRequest* req, JsonVariant& body) {
+      if (!body.is<JsonObject>() || !body["slot"].is<const char*>()) {
+        sendError(req, 400, "expected JSON body {\"slot\":\"name\"}");
+        return;
+      }
+      String slot = body["slot"].as<String>();
+      slot.trim();
+      CmdResult r = (*cb) ? (*cb)(slot) : CmdResult::RF_UNAVAILABLE;
+      if (r == CmdResult::OK) {
+        req->send(200, "application/json", "{\"ok\":true}");
+      } else {
+        sendError(req, httpCodeFor(r), cmdResultStr(r));
+      }
+    });
+  h->setMethod(method);
+  h->setMaxContentLength(256);
+  _server.addHandler(h);
 }

@@ -47,6 +47,10 @@ static bool                  servicesStarted = false;
 static volatile bool         statusDirty = true;
 static volatile bool         restartPending = false;
 static String                pendingLearnSlot;    // loop task only
+// Copy of the slot being learned for the status JSON, which the web server
+// task builds. Guarded by learnSlotMux.
+static char                  learnSlotName[SLOT_NAME_MAX + 1] = "";
+static portMUX_TYPE          learnSlotMux = portMUX_INITIALIZER_UNLOCKED;
 static QueueHandle_t         cmdQueue = nullptr;
 
 static uint16_t txBuf[RF_MAX_PULSES];             // loop task only
@@ -380,6 +384,9 @@ static void executeCommand(const Command& c) {
         return;
       }
       pendingLearnSlot = slot;
+      portENTER_CRITICAL(&learnSlotMux);
+      strlcpy(learnSlotName, c.slot, sizeof(learnSlotName));
+      portEXIT_CRITICAL(&learnSlotMux);
       if (rfLearn.startLearn()) {
         learnStartMs = millis();
         appState = AppState::LEARNING;
@@ -433,6 +440,14 @@ static String buildStatusJson() {
     learnSecs = remaining > 0 ? (int)remaining : 0;
   }
   doc["learnSecs"] = learnSecs;
+
+  char learnSlot[SLOT_NAME_MAX + 1] = "";
+  if (st == AppState::LEARNING) {
+    portENTER_CRITICAL(&learnSlotMux);
+    strlcpy(learnSlot, learnSlotName, sizeof(learnSlot));
+    portEXIT_CRITICAL(&learnSlotMux);
+  }
+  doc["learnSlot"] = learnSlot;  // char[] is copied into the document
 
   String names[SignalStore::MAX_SLOTS];
   signalStore.listNames(names);

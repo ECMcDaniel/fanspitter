@@ -1,0 +1,24 @@
+// FanSpitter (ESP32 + CC1101, fanspitter.local) replays the RF remotes of two ceiling fans.
+// Every channel publishes a stored slot name to fanspitter/cmd on the local Mosquitto:
+//   f1_* = Bedroom ceiling fan, f2_* = Living Room ceiling fan.
+// The remotes only send toggles and steps, so the fan channels have no state topic.
+// mqtt:broker:5ec45e018c is the "MQTT Broker" thing on openhabian; on another install use your own.
+// The state channel needs the JSONPath Transformation add-on.
+Thing mqtt:topic:fanspitter "FanSpitter" (mqtt:broker:5ec45e018c) {
+    Channels:
+        Type string : f1_light      "Bedroom fan light"          [ commandTopic="fanspitter/cmd", formatBeforePublish="f1_light",  allowedStates="toggle" ]
+        Type string : f1_fan        "Bedroom fan on/off"         [ commandTopic="fanspitter/cmd", formatBeforePublish="f1_fan",    allowedStates="toggle" ]
+        Type number : f1_speed      "Bedroom fan speed"          [ commandTopic="fanspitter/cmd", formatBeforePublish="f1_s%d",    min=1, max=6, step=1 ]
+        Type string : f1_brightness "Bedroom fan brightness"     [ commandTopic="fanspitter/cmd", formatBeforePublish="f1_bri_%s", allowedStates="up,down" ]
+        Type string : f1_color      "Bedroom fan light colour"   [ commandTopic="fanspitter/cmd", formatBeforePublish="f1_cct",    allowedStates="change" ]
+        Type string : f1_direction  "Bedroom fan direction"      [ commandTopic="fanspitter/cmd", formatBeforePublish="f1_dir",    allowedStates="reverse" ]
+
+        Type string : f2_light      "Living room fan light"        [ commandTopic="fanspitter/cmd", formatBeforePublish="f2_light",  allowedStates="toggle" ]
+        Type string : f2_fan        "Living room fan on/off"       [ commandTopic="fanspitter/cmd", formatBeforePublish="f2_fan",    allowedStates="toggle" ]
+        Type number : f2_speed      "Living room fan speed"        [ commandTopic="fanspitter/cmd", formatBeforePublish="f2_s%d",    min=1, max=6, step=1 ]
+        Type string : f2_brightness "Living room fan brightness"   [ commandTopic="fanspitter/cmd", formatBeforePublish="f2_bri_%s", allowedStates="up,down" ]
+        Type string : f2_color      "Living room fan light colour" [ commandTopic="fanspitter/cmd", formatBeforePublish="f2_cct",    allowedStates="change" ]
+        Type string : f2_direction  "Living room fan direction"    [ commandTopic="fanspitter/cmd", formatBeforePublish="f2_dir",    allowedStates="reverse" ]
+
+        Type string : state         "Device state"               [ stateTopic="fanspitter/status", transformationPattern="JSONPATH:$.state" ]
+}

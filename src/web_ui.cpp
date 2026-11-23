@@ -38,6 +38,8 @@ progress{width:100%;height:8px;border-radius:4px;appearance:none}
 progress::-webkit-progress-bar{background:#333;border-radius:4px}
 progress::-webkit-progress-value{background:#fa0;border-radius:4px}
 #progress-label{font-size:.75rem;color:#fa0;margin-top:.25rem}
+#lnow{font-size:1.15rem;margin-bottom:.5rem}
+#lslot{color:#fa0;word-break:break-all}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:.75rem;color:var(--sub);padding:.3rem .5rem;border-bottom:1px solid #333}
 td{padding:.5rem;font-size:.85rem;border-bottom:1px solid #222;word-break:break-all}
@@ -56,8 +58,9 @@ tr:last-child td{border-bottom:none}
 </div>
 <div class="hint">Letters, digits, _ and - only. Re-using a name overwrites it.</div>
 <div id="progress-wrap">
+<div id="lnow">Now learning: <b id="lslot"></b></div>
 <progress id="prog" max="30" value="30"></progress>
-<div id="progress-label">Hold the remote button for a second... <span id="secs"></span>s</div>
+<div id="progress-label">Hold that remote button for a second... <span id="secs"></span>s</div>
 </div>
 </section>
 <section>
@@ -76,12 +79,12 @@ function fetchStatus(){
     $('chip').className='chip '+st;
     $('meta').textContent='IP: '+(j.ip||'?')+'  |  MQTT: '+(j.mqtt?'✓':'✗')+
       '  |  RSSI: '+(j.rssi||'?')+' dBm  |  fw '+(j.version||'?');
-    $('count').textContent='('+(j.slotCount||0)+'/'+(j.maxSlots||8)+')';
+    $('count').textContent='('+(j.slotCount||0)+'/'+(j.maxSlots||'?')+')';
     renderSlots(j.slots||[]);
     const learning=j.state==='learning';
     $('learn').disabled=learning||j.rf===false;
     $('progress-wrap').style.display=learning?'block':'none';
-    if(learning){$('prog').value=j.learnSecs;$('secs').textContent=j.learnSecs;}
+    if(learning){$('prog').value=j.learnSecs;$('secs').textContent=j.learnSecs;$('lslot').textContent=j.learnSlot||'?';}
   }).catch(()=>{$('chip').textContent='OFFLINE';$('chip').className='chip offline';});
 }
 function renderSlots(slots){
@@ -140,7 +143,7 @@ $('slots').addEventListener('click',async e=>{
   }
 });
 fetchStatus();
-setInterval(fetchStatus,2000);
+setInterval(fetchStatus,1000);
 </script></body></html>
 )rawliteral";
 

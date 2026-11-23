@@ -225,7 +225,7 @@ If learn worked but the fan ignores the send: check the crystal (stage 0), move 
 
 ## 8. Remaining buttons
 
-- [ ] Learn the rest, 8 slots maximum (e.g. `fan_off`, `fan_low`, `fan_med`, `fan_high`). Names are 1–32 characters of letters, digits, `_` and `-`.
+- [ ] Learn the rest, 32 slots maximum (e.g. `fan_off`, `fan_low`, `fan_med`, `fan_high`). Names are 1–32 characters of letters, digits, `_` and `-`.
 
 ## 9. MQTT (if you configured a broker)
 

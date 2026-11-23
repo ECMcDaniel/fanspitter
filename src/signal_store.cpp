@@ -1,4 +1,5 @@
 #include "signal_store.h"
+#include <nvs.h>
 
 // RAII mutex guard
 class StoreLock {
@@ -15,10 +16,9 @@ private:
   SemaphoreHandle_t _m;
 };
 
-static void idxKey(char key[3], uint8_t slot) {
-  key[0] = 'n';
-  key[1] = (char)('0' + slot);
-  key[2] = '\0';
+// "n0" … "n31". Single-digit slots keep the keys older firmware wrote.
+static void idxKey(char key[5], uint8_t slot) {
+  snprintf(key, 5, "n%u", (unsigned)slot);
 }
 
 void SignalStore::begin() {
@@ -30,13 +30,18 @@ void SignalStore::begin() {
   // open of a missing namespace fails and logs an error).
   prefs.begin("fs_idx", false);
   for (uint8_t i = 0; i < MAX_SLOTS; i++) {
-    char key[3];
+    char key[5];
     idxKey(key, i);
     _names[i] = prefs.isKey(key) ? prefs.getString(key, "") : String();
   }
   prefs.end();
 
-  Serial.printf("[Store] Loaded %u stored signals\n", countUnlocked());
+  Serial.printf("[Store] Loaded %u of %u stored signals\n", countUnlocked(), MAX_SLOTS);
+  nvs_stats_t st;
+  if (nvs_get_stats(nullptr, &st) == ESP_OK) {
+    Serial.printf("[Store] NVS entries: %u used, %u free\n",
+                  (unsigned)st.used_entries, (unsigned)st.free_entries);
+  }
   for (uint8_t i = 0; i < MAX_SLOTS; i++) {
     if (_names[i].length() > 0) {
       Serial.printf("[Store]   [%u] %s\n", i, _names[i].c_str());
@@ -88,7 +93,7 @@ bool SignalStore::save(const String& name, const uint16_t* pulses, uint16_t puls
   {
     Preferences idx;
     idx.begin("fs_idx", false);
-    char key[3];
+    char key[5];
     idxKey(key, (uint8_t)slot);
     bool ok = idx.putString(key, name) == name.length();
     idx.end();
@@ -139,7 +144,7 @@ bool SignalStore::remove(const String& name) {
   {
     Preferences idx;
     idx.begin("fs_idx", false);
-    char key[3];
+    char key[5];
     idxKey(key, (uint8_t)slot);
     idx.remove(key);
     idx.end();
@@ -187,6 +192,6 @@ int SignalStore::freeSlot() const {
 
 String SignalStore::slotNS(uint8_t idx) {
   String s = "fs_s";
-  s += (char)('0' + idx);
+  s += String((unsigned)idx);
   return s;
 }

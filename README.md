@@ -6,7 +6,7 @@ Control ceiling fans via RF remote learning and MQTT commands. FanSpitter is ESP
 
 FanSpitter uses a **CC1101 RF transceiver** in **OOK** (On-Off Keying) mode, tuned to your remote's frequency (433.957 MHz by default), to:
 - Capture and learn RF signals from your ceiling fan remote
-- Store up to **8 named signal slots** in persistent flash memory
+- Store up to **32 named signal slots** in persistent flash memory
 - Replay learned signals via bit-bang modulation
 - Expose signals via **MQTT topics** for OpenHAB, Home Assistant, Node-RED
 - Provide a **web UI** for standalone control and learning
@@ -158,9 +158,10 @@ Served at `GET /api/status` and published to `<base>/status`:
 {
   "state": "idle",
   "learnSecs": 0,
+  "learnSlot": "",
   "slots": ["fan_high", "fan_med", "light_toggle"],
   "slotCount": 3,
-  "maxSlots": 8,
+  "maxSlots": 32,
   "ip": "192.168.1.42",
   "rssi": -58,
   "mqtt": true,
@@ -172,9 +173,11 @@ Served at `GET /api/status` and published to `<base>/status`:
 }
 ```
 
-`state` is `idle`, `learning`, `transmitting` (or `offline` from the Last Will). `rf: false` means the CC1101 didn't respond at boot. `version` comes from `git describe` at build time.
+`state` is `idle`, `learning`, `transmitting` (or `offline` from the Last Will). While learning, `learnSlot` names the slot being recorded and `learnSecs` counts down; the web page shows both. `rf: false` means the CC1101 didn't respond at boot. `version` comes from `git describe` at build time.
 
 ## OpenHAB integration
+
+A complete two-fan example (thing and items) is in [`openhab/`](openhab/). It uses slot names `f1_…` and `f2_…`, with one command-only item per remote function, placed in the semantic model. The minimal form:
 
 ```
 Thing mqtt:topic:fanspitter "FanSpitter" (mqtt:broker:localBroker) {
@@ -208,7 +211,7 @@ Switch item=FanCmd mappings=[fan_high="High", fan_med="Med", fan_off="Off", ligh
 | `POST` | `/api/send` | `{"slot":"name"}` | Replay signal |
 | `DELETE` | `/api/slot` | `{"slot":"name"}` | Delete slot |
 
-Errors return `{"error":"…"}` with `400` (bad name/body), `404` (no such slot), `409` (busy learning), `503` (RF unavailable or queue full), or `507` (all 8 slots used).
+Errors return `{"error":"…"}` with `400` (bad name/body), `404` (no such slot), `409` (busy learning), `503` (RF unavailable or queue full), or `507` (all 32 slots used).
 
 The web UI and API have **no authentication**. Keep the device on a trusted LAN or VLAN.
 
@@ -223,7 +226,7 @@ The web UI and API have **no authentication**. Keep the device on a trusted LAN 
 | `rf_learn.h/.cpp` | IRAM ISR pulse capture, 2-frame confirmation, bit-bang TX |
 | `pulse_match.h` | Pure frame-comparison logic (unit-tested) |
 | `slot_name.h` | Slot-name validation (unit-tested) |
-| `signal_store.h/.cpp` | Thread-safe NVS storage (8 slots × 400 pulses) |
+| `signal_store.h/.cpp` | Thread-safe NVS storage (up to 32 slots, each stored at its real length) |
 | `mqtt_handler.h/.cpp` | PubSubClient with auth, LWT and reconnect backoff |
 | `web_ui.h/.cpp` | ESPAsyncWebServer UI + JSON API |
 | `config.h` | Pins and tunables, all overridable with `-D` flags |

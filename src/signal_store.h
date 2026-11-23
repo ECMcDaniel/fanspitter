@@ -6,13 +6,13 @@
 #include "rf_learn.h"  // for RF_MAX_PULSES
 
 // ────────────────────────────────────────────────────────────────────────────
-// SignalStore — NVS-backed storage for up to 8 named signal slots
+// SignalStore — NVS-backed storage for up to MAX_SLOTS named signal slots
 //
 // NVS layout:
 //   Namespace "fs_idx"
-//     "n0" … "n7"  String   slot names  (empty = unused)
+//     "n0" … "n31" String   slot names  (empty = unused)
 //
-//   Namespace "fs_s0" … "fs_s7"
+//   Namespace "fs_s0" … "fs_s31"
 //     "cnt"         UShort   pulse count
 //     "data"        Bytes    raw uint16_t[] pulse widths
 //
@@ -21,7 +21,11 @@
 // ────────────────────────────────────────────────────────────────────────────
 class SignalStore {
 public:
-  static constexpr uint8_t MAX_SLOTS = 8;
+  // 32 covers two fans with a full remote each. Slots are stored at their
+  // real length (a 66-pulse signal costs about 11 NVS entries), and the 20 KB
+  // NVS partition holds roughly 500 entries shared with WiFi and settings.
+  // begin() logs the entries in use so the headroom is visible.
+  static constexpr uint8_t MAX_SLOTS = 32;
 
   SignalStore() = default;
 

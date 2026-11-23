@@ -1,0 +1,27 @@
+// Ceiling-fan remote buttons, sent through FanSpitter (fanspitter.things).
+// Every fan item is command-only: the remotes send toggles and steps, so openHAB cannot know
+// whether a fan or light is on. autoupdate="false" keeps the items from holding a made-up state.
+//   Light, Fan, Color, Direction: send the one command the item offers (toggle / change / reverse)
+//   Speed: send 1..6        Brightness: send up or down
+// "Fan" is the remote's fan on/off toggle: it stops a running fan and starts a stopped one.
+
+// Bedroom: joins the existing UI-managed equipment Bedroom_Ceiling_Fan. Its Power item is the
+// Kasa wall switch that feeds this fan, so these do nothing while Power is OFF.
+String Bedroom_Ceiling_Fan_Light      "Light"      (Bedroom_Ceiling_Fan) ["Control", "Light"]            { channel="mqtt:topic:fanspitter:f1_light",      autoupdate="false" }
+String Bedroom_Ceiling_Fan_Fan        "Fan"        (Bedroom_Ceiling_Fan) ["Control", "Power"]            { channel="mqtt:topic:fanspitter:f1_fan",        autoupdate="false" }
+Number Bedroom_Ceiling_Fan_Speed      "Speed"      (Bedroom_Ceiling_Fan) ["Control", "Airflow"]          { channel="mqtt:topic:fanspitter:f1_speed",      autoupdate="false" }
+String Bedroom_Ceiling_Fan_Brightness "Brightness" (Bedroom_Ceiling_Fan) ["Control", "Brightness"]       { channel="mqtt:topic:fanspitter:f1_brightness", autoupdate="false" }
+String Bedroom_Ceiling_Fan_Color      "Color"      (Bedroom_Ceiling_Fan) ["Control", "ColorTemperature"] { channel="mqtt:topic:fanspitter:f1_color",      autoupdate="false" }
+String Bedroom_Ceiling_Fan_Direction  "Direction"  (Bedroom_Ceiling_Fan) ["Control"]                     { channel="mqtt:topic:fanspitter:f1_direction",  autoupdate="false" }
+
+// Living Room: new equipment.
+Group  Living_Room_Ceiling_Fan            "Living Room Ceiling Fan" (LivingRoom) ["FanCeiling"]
+String Living_Room_Ceiling_Fan_Light      "Light"      (Living_Room_Ceiling_Fan) ["Control", "Light"]            { channel="mqtt:topic:fanspitter:f2_light",      autoupdate="false" }
+String Living_Room_Ceiling_Fan_Fan        "Fan"        (Living_Room_Ceiling_Fan) ["Control", "Power"]            { channel="mqtt:topic:fanspitter:f2_fan",        autoupdate="false" }
+Number Living_Room_Ceiling_Fan_Speed      "Speed"      (Living_Room_Ceiling_Fan) ["Control", "Airflow"]          { channel="mqtt:topic:fanspitter:f2_speed",      autoupdate="false" }
+String Living_Room_Ceiling_Fan_Brightness "Brightness" (Living_Room_Ceiling_Fan) ["Control", "Brightness"]       { channel="mqtt:topic:fanspitter:f2_brightness", autoupdate="false" }
+String Living_Room_Ceiling_Fan_Color      "Color"      (Living_Room_Ceiling_Fan) ["Control", "ColorTemperature"] { channel="mqtt:topic:fanspitter:f2_color",      autoupdate="false" }
+String Living_Room_Ceiling_Fan_Direction  "Direction"  (Living_Room_Ceiling_Fan) ["Control"]                     { channel="mqtt:topic:fanspitter:f2_direction",  autoupdate="false" }
+
+// The board itself: idle, learning, transmitting, or offline (its MQTT Last Will).
+String FanSpitter_State "FanSpitter" (gNetwork) ["Status"] { channel="mqtt:topic:fanspitter:state" }

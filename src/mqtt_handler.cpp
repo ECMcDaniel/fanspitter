@@ -19,7 +19,7 @@ MQTTHandler::MQTTHandler(const MqttConfig& cfg) : _cfg(cfg) {
   _client.setClient(_wifiClient);
   _client.setServer(_cfg.host.c_str(), _cfg.port);
   _client.setCallback(mqttCallback);
-  _client.setBufferSize(1024);   // status JSON with 8 × 32-char slot names
+  _client.setBufferSize(2048);   // status JSON with 32 × 32-char slot names
   _client.setSocketTimeout(3);   // bound how long connect() can block (s)
   _client.setKeepAlive(30);
   _instance = this;

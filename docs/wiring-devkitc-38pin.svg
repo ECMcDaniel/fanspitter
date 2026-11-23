@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1090 834" width="1090" height="834" role="img" aria-label="ESP32-DevKitC V4 and 38-pin clones to CC1101: VCC to 3V3; GND to GND; MOSI to IO23; MISO to IO19; SCK to IO18; CSN to IO5; GDO0 to IO2">
+<title>ESP32-DevKitC V4 and 38-pin clones to CC1101</title><desc>VCC to 3V3; GND to GND; MOSI to IO23; MISO to IO19; SCK to IO18; CSN to IO5; GDO0 to IO2. GDO2 not connected.</desc>
+<rect width="1090" height="834" fill="#ffffff"/>
+<text x="46" y="40" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#1f2328" text-anchor="start">ESP32-DevKitC V4 and 38-pin clones to CC1101</text>
+<text x="46" y="64" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="400" fill="#5b6470" text-anchor="start">Top view, antenna end up, USB at the bottom. Go by the labels printed on your board, not by position.</text>
+<rect x="70" y="110" width="250" height="598" rx="8" fill="#eef2ef" stroke="#3c4a44" stroke-width="1.5"/>
+<rect x="145" y="144" width="100" height="150" rx="4" fill="#dfe3e6" stroke="#9aa3ab"/>
+<text x="195" y="133" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6470" text-anchor="middle">antenna end</text>
+<text x="195" y="223" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#5b6470" text-anchor="middle">ESP32</text>
+<rect x="165.0" y="684" width="60" height="34" rx="3" fill="#c5cad0" stroke="#59626b"/>
+<text x="195" y="705" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#3b434b" text-anchor="middle">USB</text>
+<text x="102" y="192.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="start">3V3</text>
+<circle cx="88" cy="214" r="4" fill="#b9bfc7"/>
+<text x="102" y="218" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">EN</text>
+<circle cx="88" cy="240" r="4" fill="#b9bfc7"/>
+<text x="102" y="244" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">VP</text>
+<circle cx="88" cy="266" r="4" fill="#b9bfc7"/>
+<text x="102" y="270" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">VN</text>
+<circle cx="88" cy="292" r="4" fill="#b9bfc7"/>
+<text x="102" y="296" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO34</text>
+<circle cx="88" cy="318" r="4" fill="#b9bfc7"/>
+<text x="102" y="322" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO35</text>
+<circle cx="88" cy="344" r="4" fill="#b9bfc7"/>
+<text x="102" y="348" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO32</text>
+<circle cx="88" cy="370" r="4" fill="#b9bfc7"/>
+<text x="102" y="374" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO33</text>
+<circle cx="88" cy="396" r="4" fill="#b9bfc7"/>
+<text x="102" y="400" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO25</text>
+<circle cx="88" cy="422" r="4" fill="#b9bfc7"/>
+<text x="102" y="426" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO26</text>
+<circle cx="88" cy="448" r="4" fill="#b9bfc7"/>
+<text x="102" y="452" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO27</text>
+<circle cx="88" cy="474" r="4" fill="#b9bfc7"/>
+<text x="102" y="478" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO14</text>
+<circle cx="88" cy="500" r="4" fill="#b9bfc7"/>
+<text x="102" y="504" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO12</text>
+<circle cx="88" cy="526" r="4" fill="#b9bfc7"/>
+<text x="102" y="530" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">GND</text>
+<circle cx="88" cy="552" r="4" fill="#b9bfc7"/>
+<text x="102" y="556" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">IO13</text>
+<circle cx="88" cy="578" r="4" fill="#b9bfc7"/>
+<text x="102" y="582" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">D2</text>
+<circle cx="88" cy="604" r="4" fill="#b9bfc7"/>
+<text x="102" y="608" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">D3</text>
+<circle cx="88" cy="630" r="4" fill="#b9bfc7"/>
+<text x="102" y="634" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">CMD</text>
+<circle cx="88" cy="656" r="4" fill="#b9bfc7"/>
+<text x="102" y="660" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="start">5V</text>
+<text x="288" y="192.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">GND</text>
+<text x="288" y="218.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">IO23</text>
+<circle cx="302" cy="240" r="4" fill="#b9bfc7"/>
+<text x="288" y="244" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">IO22</text>
+<circle cx="302" cy="266" r="4" fill="#b9bfc7"/>
+<text x="288" y="270" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">TX</text>
+<circle cx="302" cy="292" r="4" fill="#b9bfc7"/>
+<text x="288" y="296" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">RX</text>
+<circle cx="302" cy="318" r="4" fill="#b9bfc7"/>
+<text x="288" y="322" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">IO21</text>
+<circle cx="302" cy="344" r="4" fill="#b9bfc7"/>
+<text x="288" y="348" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">GND</text>
+<text x="288" y="374.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">IO19</text>
+<text x="288" y="400.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">IO18</text>
+<text x="288" y="426.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">IO5</text>
+<circle cx="302" cy="448" r="4" fill="#b9bfc7"/>
+<text x="288" y="452" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">IO17</text>
+<circle cx="302" cy="474" r="4" fill="#b9bfc7"/>
+<text x="288" y="478" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">IO16</text>
+<circle cx="302" cy="500" r="4" fill="#b9bfc7"/>
+<text x="288" y="504" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">IO4</text>
+<circle cx="302" cy="526" r="4" fill="#b9bfc7"/>
+<text x="288" y="530" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">IO0</text>
+<text x="288" y="556.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">IO2</text>
+<circle cx="302" cy="578" r="4" fill="#b9bfc7"/>
+<text x="288" y="582" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">IO15</text>
+<circle cx="302" cy="604" r="4" fill="#b9bfc7"/>
+<text x="288" y="608" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">D1</text>
+<circle cx="302" cy="630" r="4" fill="#b9bfc7"/>
+<text x="288" y="634" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">D0</text>
+<circle cx="302" cy="656" r="4" fill="#b9bfc7"/>
+<text x="288" y="660" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#7a838d" text-anchor="end">CLK</text>
+<rect x="562" y="148" width="250" height="392" rx="8" fill="#eef1f6" stroke="#3c4458" stroke-width="1.5"/>
+<text x="578" y="172" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#1f2328" text-anchor="start">CC1101 module</text>
+<text x="798" y="172" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6470" text-anchor="end">by signal name</text>
+<path d="M88,188 L46,188 L46,90 L402,90 L402,202 L596,202" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M88,188 L46,188 L46,90 L402,90 L402,202 L596,202" fill="none" stroke="#d62828" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M302,188 L376,188 L376,246 L596,246" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M302,188 L376,188 L376,246 L596,246" fill="none" stroke="#1f1f1f" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M302,214 L350,214 L350,290 L596,290" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M302,214 L350,214 L350,290 L596,290" fill="none" stroke="#1c6dd0" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M302,370 L428,370 L428,334 L596,334" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M302,370 L428,370 L428,334 L596,334" fill="none" stroke="#2e9e44" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M302,396 L454,396 L454,378 L596,378" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M302,396 L454,396 L454,378 L596,378" fill="none" stroke="#e07b00" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M302,422 L480,422 L596,422" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M302,422 L480,422 L596,422" fill="none" stroke="#8a3fc2" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M302,552 L506,552 L506,466 L596,466" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+<path d="M302,552 L506,552 L506,466 L596,466" fill="none" stroke="#0b9aa0" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="88" cy="188" r="7" fill="#d62828" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="596" cy="202" r="8" fill="#d62828" stroke="#ffffff" stroke-width="1.5"/>
+<text x="616" y="207" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1f2328">VCC<tspan dx="8" font-size="11" font-weight="400" fill="#5b6470">3.3 V</tspan></text>
+<text x="798" y="206.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#5b6470" text-anchor="end">to 3V3</text>
+<circle cx="302" cy="188" r="7" fill="#1f1f1f" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="596" cy="246" r="8" fill="#1f1f1f" stroke="#ffffff" stroke-width="1.5"/>
+<text x="616" y="251" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1f2328">GND</text>
+<text x="798" y="250.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#5b6470" text-anchor="end">to GND</text>
+<circle cx="302" cy="214" r="7" fill="#1c6dd0" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="596" cy="290" r="8" fill="#1c6dd0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="616" y="295" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1f2328">MOSI<tspan dx="8" font-size="11" font-weight="400" fill="#5b6470">or SI</tspan></text>
+<text x="798" y="294.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#5b6470" text-anchor="end">to IO23</text>
+<circle cx="302" cy="370" r="7" fill="#2e9e44" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="596" cy="334" r="8" fill="#2e9e44" stroke="#ffffff" stroke-width="1.5"/>
+<text x="616" y="339" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1f2328">MISO<tspan dx="8" font-size="11" font-weight="400" fill="#5b6470">or SO</tspan></text>
+<text x="798" y="338.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#5b6470" text-anchor="end">to IO19</text>
+<circle cx="302" cy="396" r="7" fill="#e07b00" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="596" cy="378" r="8" fill="#e07b00" stroke="#ffffff" stroke-width="1.5"/>
+<text x="616" y="383" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1f2328">SCK</text>
+<text x="798" y="382.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#5b6470" text-anchor="end">to IO18</text>
+<circle cx="302" cy="422" r="7" fill="#8a3fc2" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="596" cy="422" r="8" fill="#8a3fc2" stroke="#ffffff" stroke-width="1.5"/>
+<text x="616" y="427" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1f2328">CSN<tspan dx="8" font-size="11" font-weight="400" fill="#5b6470">or CS</tspan></text>
+<text x="798" y="426.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#5b6470" text-anchor="end">to IO5</text>
+<circle cx="302" cy="552" r="7" fill="#0b9aa0" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="596" cy="466" r="8" fill="#0b9aa0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="616" y="471" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#1f2328">GDO0</text>
+<text x="798" y="470.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#5b6470" text-anchor="end">to IO2</text>
+<circle cx="596" cy="510" r="7" fill="#ffffff" stroke="#9aa3ab" stroke-width="1.5"/>
+<text x="616" y="515" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#8a929b" text-anchor="start">GDO2</text>
+<text x="798" y="514.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="12" font-weight="400" fill="#5b6470" text-anchor="end">not connected</text>
+<rect x="842" y="148" width="220" height="392" rx="8" fill="#ffffff" stroke="#8a929b" stroke-width="1.2" stroke-dasharray="6 4"/>
+<text x="952" y="172" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="middle">Common 8-pin header</text>
+<text x="952" y="190" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6470" text-anchor="middle">top view, where the signals usually are</text>
+<rect x="905.0" y="226" width="94.0" height="176" rx="5" fill="#e3e6ea" stroke="#59626b"/>
+<rect x="917.0" y="238" width="20" height="20" rx="2" fill="#1f1f1f" stroke="#ffffff" stroke-width="1.5"/>
+<text x="927" y="252" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+<text x="893" y="252.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">GND</text>
+<circle cx="977.0" cy="248" r="10" fill="#d62828" stroke="#ffffff" stroke-width="1.5"/>
+<text x="977" y="252" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+<text x="1011" y="252.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="start">VCC</text>
+<circle cx="927.0" cy="292" r="10" fill="#0b9aa0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="927" y="296" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+<text x="893" y="296.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">GDO0</text>
+<circle cx="977.0" cy="292" r="10" fill="#8a3fc2" stroke="#ffffff" stroke-width="1.5"/>
+<text x="977" y="296" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+<text x="1011" y="296.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="start">CSN</text>
+<circle cx="927.0" cy="336" r="10" fill="#e07b00" stroke="#ffffff" stroke-width="1.5"/>
+<text x="927" y="340" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+<text x="893" y="340.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">SCK</text>
+<circle cx="977.0" cy="336" r="10" fill="#1c6dd0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="977" y="340" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
+<text x="1011" y="340.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="start">MOSI</text>
+<circle cx="927.0" cy="380" r="10" fill="#2e9e44" stroke="#ffffff" stroke-width="1.5"/>
+<text x="927" y="384" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle">7</text>
+<text x="893" y="384.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#1f2328" text-anchor="end">MISO</text>
+<circle cx="977.0" cy="380" r="10" fill="#ffffff" stroke="#9aa3ab" stroke-width="1.5"/>
+<text x="977" y="384" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#6b737c" text-anchor="middle">8</text>
+<text x="1011" y="384.5" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#8a929b" text-anchor="start">GDO2</text>
+<text x="952" y="436" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11.5" font-weight="400" fill="#5b6470" text-anchor="middle">Pin order differs between</text>
+<text x="952" y="452" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11.5" font-weight="400" fill="#5b6470" text-anchor="middle">modules. Check the silkscreen</text>
+<text x="952" y="468" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11.5" font-weight="400" fill="#5b6470" text-anchor="middle">or seller's pinout before</text>
+<text x="952" y="484" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="11.5" font-weight="400" fill="#5b6470" text-anchor="middle">you power it.</text>
+<circle cx="52" cy="755.5" r="5" fill="#d62828"/>
+<text x="66" y="760" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="400" fill="#1f2328" text-anchor="start">VCC goes to 3V3 only, never 5V. The CC1101 is a 3.3 V part.</text>
+<circle cx="52" cy="777.5" r="5" fill="#0b9aa0"/>
+<text x="66" y="782" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="400" fill="#1f2328" text-anchor="start">GDO0 goes to IO2 (may be printed 2 or G2). The pin marked D2 or SD2 by the USB end is a flash pin, not GPIO 2.</text>
+<circle cx="52" cy="799.5" r="5" fill="#b9bfc7"/>
+<text x="66" y="804" font-family="DejaVu Sans, Verdana, Arial, Helvetica, sans-serif" font-size="13" font-weight="400" fill="#1f2328" text-anchor="start">Line colours are only for tracing. Any jumper colour works. GDO2 stays unconnected.</text>
+</svg>

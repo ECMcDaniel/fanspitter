@@ -57,7 +57,7 @@ tr:last-child td{border-bottom:none}
 <div class="hint">Letters, digits, _ and - only. Re-using a name overwrites it.</div>
 <div id="progress-wrap">
 <progress id="prog" max="30" value="30"></progress>
-<div id="progress-label">Press the remote button twice... <span id="secs"></span>s</div>
+<div id="progress-label">Hold the remote button for a second... <span id="secs"></span>s</div>
 </div>
 </section>
 <section>
@@ -121,7 +121,7 @@ $('learn').onclick=async()=>{
   const name=$('sname').value.trim();
   if(!/^[A-Za-z0-9_-]{1,32}$/.test(name)){toast('Use 1-32 letters, digits, _ or -',false);return;}
   const r=await api('POST','/api/learn',name);
-  toast(r.ok?'Learning: press the remote button twice':r.error,r.ok);
+  toast(r.ok?'Learning: hold the remote button for a second':r.error,r.ok);
   fetchStatus();
 };
 $('sname').addEventListener('keydown',e=>{if(e.key==='Enter')$('learn').click();});

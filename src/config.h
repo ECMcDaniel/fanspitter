@@ -20,6 +20,13 @@
 #define PIN_MISO MISO
 #endif
 
+// RF carrier in Hz. Set this to your remote's *measured* frequency: remotes sit
+// tens of kHz off their nominal value (433.92 MHz, 303.875 MHz, ...). The
+// default is the prototype's remote as measured with this CC1101.
+#ifndef RF_FREQ_HZ
+#define RF_FREQ_HZ 433957000UL
+#endif
+
 // Hold this button for FACTORY_RESET_HOLD_MS to wipe WiFi + MQTT settings
 // (learned signals are kept). GPIO0 is the BOOT button on most DevKits.
 // Set to -1 to disable.

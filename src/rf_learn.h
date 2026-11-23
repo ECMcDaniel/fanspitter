@@ -7,15 +7,26 @@
 // Pulse capture limits
 // ────────────────────────────────────────────────────────────────────────────
 static constexpr uint16_t RF_MAX_PULSES       = 400;   // max pulses per frame
-static constexpr uint32_t RF_FRAME_GAP_US     = 10000; // gap > 10 ms = end-of-frame
+// A carrier-off period this long ends a frame. Must sit between the longest
+// "off" inside a frame and the gap between repeats: PT2262/EV1527-style
+// remotes use 3T inside and 31T between, and the prototype's remote measured
+// 0.75 ms inside and 7.9 ms between.
+static constexpr uint32_t RF_FRAME_GAP_US     = 5000;
+// The gap that closed a frame is stored as its last (carrier-off) entry so a
+// replay keeps the remote's own spacing between repeats. Longer gaps (button
+// released) are clamped to this.
+static constexpr uint16_t RF_GAP_STORE_MAX_US = 30000;
 static constexpr uint16_t RF_GLITCH_US        = 50;    // ignore edges closer than this
 static constexpr uint16_t RF_MIN_PULSES       = 10;    // discard frames shorter than this
 static constexpr uint8_t  RF_CONFIRM_TOL_PCT  = 20;    // ±20% tolerance for confirmation
-static constexpr uint16_t RF_CONFIRM_TOL_MIN_US = 50;  // …but never tighter than 50 µs
+// …but never tighter than this. The CC1101's async sampler puts about ±50 µs
+// of jitter on every edge, so two captures of one pulse can differ by ~100 µs.
+static constexpr uint16_t RF_CONFIRM_TOL_MIN_US = 100;
 static constexpr uint8_t  RF_CONFIRM_MAX_LEN_DIFF = 2; // allowed pulse-count difference
 static constexpr uint32_t RF_LEARN_TIMEOUT_MS = 30000; // max time in learn mode (ms)
-static constexpr uint8_t  RF_TX_REPEATS       = 3;     // how many times to replay a signal
-static constexpr uint32_t RF_TX_GAP_MS        = 20;    // gap between repeats
+static constexpr uint8_t  RF_TX_REPEATS       = 8;     // how many times to replay a signal
+// Extra pause between repeats, on top of the gap stored with the frame.
+static constexpr uint32_t RF_TX_GAP_MS        = 0;
 // Frames longer than this are sent with interrupts enabled (more jitter) so
 // the 300 ms interrupt watchdog can never fire.
 static constexpr uint32_t RF_TX_MAX_MASKED_US = 200000;

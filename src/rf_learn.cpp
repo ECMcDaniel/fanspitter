@@ -4,26 +4,33 @@
 #include <esp_timer.h>   // esp_timer_get_time() — IRAM-safe µs clock
 
 // ────────────────────────────────────────────────────────────────────────────
-// ISR ring buffer (DRAM, shared between ISR and the loop task; both run on
-// the same core because the ISR is attached from the loop task)
+// ISR frame buffer (DRAM, shared between ISR and the loop task; both run on
+// the same core because the ISR is attached from the loop task).
+//
+// The ISR records exactly one frame at a time, from the edge that ends one
+// carrier-off gap to the edge that ends the next, then parks until the loop
+// task has collected it. Recording only gap-to-gap means every captured frame
+// is whole, however long the loop task takes to get round to it, and a remote
+// that repeats while the button is held gives two matching frames in one press.
 // ────────────────────────────────────────────────────────────────────────────
-struct PulseRingBuffer {
+struct PulseFrameBuffer {
   volatile uint16_t buf[RF_MAX_PULSES];
-  volatile uint16_t head;       // ISR writes
-  volatile uint16_t tail;       // loop reads
-  volatile bool     frameReady; // ISR sets when an end-of-frame gap is seen
-  volatile bool     overflow;   // ISR sets when the buffer is full
+  volatile uint16_t count;      // entries recorded in the current frame
+  volatile bool     inFrame;    // a gap has been seen; recording
+  volatile bool     frameReady; // frame complete; ISR parked until collected
+  volatile bool     overflow;   // a frame was dropped for being too long
   volatile uint32_t lastEdgeUs; // timestamp of last edge (µs)
 };
 
-static PulseRingBuffer s_rb;
+static PulseFrameBuffer s_rb;
+static gpio_num_t       s_gdo0 = GPIO_NUM_NC;
 
 static void resetRingBuffer() {
-  s_rb.head       = 0;
-  s_rb.tail       = 0;
-  s_rb.frameReady = false;
+  s_rb.count      = 0;
+  s_rb.inFrame    = false;
   s_rb.overflow   = false;
   s_rb.lastEdgeUs = (uint32_t)esp_timer_get_time();
+  s_rb.frameReady = false;      // last: this is what un-parks the ISR
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -34,22 +41,36 @@ static void IRAM_ATTR gdo0IsrHandler() {
   uint32_t width = now - s_rb.lastEdgeUs;
   s_rb.lastEdgeUs = now;
 
+  if (s_rb.frameReady) return;           // previous frame not collected yet
   if (width < RF_GLITCH_US) return;
 
-  // A long quiet period ends a frame. The edge that ends the gap is the
-  // start of the next frame's first (carrier-on) pulse.
-  if (width >= RF_FRAME_GAP_US) {
-    if (s_rb.head != s_rb.tail) s_rb.frameReady = true;
+  // A rising edge after a long quiet (carrier-off) period starts a frame, and
+  // ends the one before it. A long carrier-ON period is just a long pulse.
+  const bool rising = gpio_get_level(s_gdo0) == 1;
+  if (width >= RF_FRAME_GAP_US && rising) {
+    if (s_rb.inFrame && s_rb.count > 0) {
+      // Close the frame with its gap so a replay keeps the repeat spacing.
+      s_rb.buf[s_rb.count] = (width > RF_GAP_STORE_MAX_US) ? RF_GAP_STORE_MAX_US : (uint16_t)width;
+      s_rb.count = s_rb.count + 1;
+      s_rb.frameReady = true;
+    } else {
+      s_rb.inFrame = true;               // first frame since learning started
+    }
     return;
   }
 
-  uint16_t next = (s_rb.head + 1) % RF_MAX_PULSES;
-  if (next == s_rb.tail) {
+  if (!s_rb.inFrame) return;             // joined mid-frame; wait for a gap
+
+  // Keep one slot free for the closing gap. A frame that doesn't fit, or a
+  // carrier-on stretch too long for 16 bits, is dropped rather than truncated.
+  if (s_rb.count >= RF_MAX_PULSES - 1 || width > 0xFFFF) {
     s_rb.overflow = true;
+    s_rb.count    = 0;
+    s_rb.inFrame  = false;
     return;
   }
-  s_rb.buf[s_rb.head] = (uint16_t)width;  // < RF_FRAME_GAP_US, fits in 16 bits
-  s_rb.head = next;
+  s_rb.buf[s_rb.count] = (uint16_t)width;
+  s_rb.count = s_rb.count + 1;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -92,9 +113,8 @@ void RFLearn::process() {
   }
 
   if (!s_rb.frameReady) return;
-  s_rb.frameReady = false;
 
-  drainFrameFromRingBuffer();
+  drainFrameFromRingBuffer();   // also re-arms the ISR for the next frame
 
   if (_captureLen[_captureCount] < RF_MIN_PULSES) {
     Serial.printf("[RF] Frame too short (%u pulses), ignoring\n",
@@ -171,17 +191,18 @@ uint16_t RFLearn::getConfirmedPulses(uint16_t* outBuf, uint16_t maxLen) const {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Copy pulses up to the current head into _capture[_captureCount].
+// Copy the completed frame into _capture[_captureCount] and re-arm the ISR.
+// The ISR is parked while frameReady is set, so the buffer is stable here.
 // ────────────────────────────────────────────────────────────────────────────
 void RFLearn::drainFrameFromRingBuffer() {
-  uint16_t dst = 0;
-  uint16_t h   = s_rb.head;  // snapshot; ISR may keep appending
+  uint16_t n = s_rb.count;
+  if (n > RF_MAX_PULSES) n = RF_MAX_PULSES;
+  for (uint16_t i = 0; i < n; i++) _capture[_captureCount][i] = s_rb.buf[i];
+  _captureLen[_captureCount] = n;
 
-  while (s_rb.tail != h && dst < RF_MAX_PULSES) {
-    _capture[_captureCount][dst++] = s_rb.buf[s_rb.tail];
-    s_rb.tail = (s_rb.tail + 1) % RF_MAX_PULSES;
-  }
-  _captureLen[_captureCount] = dst;
+  s_rb.count      = 0;
+  s_rb.inFrame    = false;   // the next frame starts at the next gap
+  s_rb.frameReady = false;   // last: un-parks the ISR
 }
 
 bool RFLearn::confirmFrames() {
@@ -242,11 +263,13 @@ bool RFLearn::transmit(const uint16_t* pulses, uint16_t count) {
     gpio_set_level(pin, 0);
     if (mask) portENABLE_INTERRUPTS();
 
-    if (rep + 1 < RF_TX_REPEATS) delay(RF_TX_GAP_MS);
+    // The frame's own closing gap has already been timed above.
+    if (RF_TX_GAP_MS > 0 && rep + 1 < RF_TX_REPEATS) delay(RF_TX_GAP_MS);
   }
 
-  _cc.setIdle();
+  // Release the line before leaving TX: out of TX the chip drives GDO0 itself.
   pinMode(_gdo0Pin, INPUT_PULLDOWN);
+  _cc.setIdle();
   _state = State::IDLE;
   Serial.printf("[RF] Transmitted %u pulses x %u\n", count, RF_TX_REPEATS);
   return true;
@@ -257,6 +280,7 @@ bool RFLearn::transmit(const uint16_t* pulses, uint16_t count) {
 // ────────────────────────────────────────────────────────────────────────────
 void RFLearn::attachISR() {
   pinMode(_gdo0Pin, INPUT);
+  s_gdo0 = (gpio_num_t)_gdo0Pin;
   s_rb.lastEdgeUs = (uint32_t)esp_timer_get_time();
   attachInterrupt(digitalPinToInterrupt(_gdo0Pin), gdo0IsrHandler, CHANGE);
 }

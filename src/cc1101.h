@@ -67,8 +67,12 @@ namespace CC1101Strobe {
 // ────────────────────────────────────────────────────────────────────────────
 // IOCFG0 signal selections used by this firmware
 // ────────────────────────────────────────────────────────────────────────────
-constexpr uint8_t IOCFG0_ASYNC_RX = 0x0C;  // demodulated serial output
-constexpr uint8_t IOCFG0_ASYNC_TX = 0x0B;  // serial data input (driven by MCU)
+// 0x0D is "serial data output, asynchronous serial mode". (0x0C is the
+// *synchronous* data output and stays silent in async mode: measured on
+// hardware, zero edges with a remote transmitting on-channel.) In TX the chip
+// turns GDO0 into the data input by itself, so the same value serves both.
+constexpr uint8_t IOCFG0_ASYNC_RX = 0x0D;
+constexpr uint8_t IOCFG0_ASYNC_TX = 0x0D;
 
 // ────────────────────────────────────────────────────────────────────────────
 // CC1101 driver class

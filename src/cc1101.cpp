@@ -1,20 +1,28 @@
 #include "cc1101.h"
+#include "config.h"
+#include <driver/gpio.h>
+
+// FREQ2/1/0 = carrier × 2^16 / f_xosc, for a 26 MHz crystal (rounded).
+static constexpr uint32_t FREQ_WORD =
+  (uint32_t)(((uint64_t)RF_FREQ_HZ * 65536ULL + 13000000ULL) / 26000000ULL);
 
 // ────────────────────────────────────────────────────────────────────────────
 // Register table — written top-to-bottom by loadRegisterTable()
-// Generated from SmartRF Studio 7 for 26 MHz crystal, 303.002 MHz, OOK,
-// async serial mode (PKT_FORMAT = 11b), infinite packet length.
+// 26 MHz crystal, carrier from RF_FREQ_HZ, OOK, async serial mode
+// (PKT_FORMAT = 11b), infinite packet length.
 // ────────────────────────────────────────────────────────────────────────────
 const uint8_t CC1101::CONFIG_TABLE[][2] = {
   //  address               value     comment
-  { CC1101Reg::IOCFG0,   0x0C },  // GDO0 = async serial data output (RX default)
+  { CC1101Reg::IOCFG0,   IOCFG0_ASYNC_RX },  // GDO0 = async serial data output
   { CC1101Reg::IOCFG2,   0x29 },  // GDO2 = chip-ready signal (optional, unused)
   { CC1101Reg::PKTCTRL0, 0x32 },  // async serial mode, infinite packet, no CRC
   { CC1101Reg::FSCTRL1,  0x06 },  // IF frequency = 152.3 kHz
-  { CC1101Reg::FREQ2,    0x0B },  // ─┐
-  { CC1101Reg::FREQ1,    0xA7 },  //  │ 303.002 MHz (26 MHz XO)
-  { CC1101Reg::FREQ0,    0x6E },  // ─┘
-  { CC1101Reg::MDMCFG4,  0xF6 },  // BW ~67 kHz (wide enough for OOK pulses)
+  { CC1101Reg::FREQ2,    (uint8_t)(FREQ_WORD >> 16) },  // ─┐
+  { CC1101Reg::FREQ1,    (uint8_t)(FREQ_WORD >> 8)  },  //  │ RF_FREQ_HZ (26 MHz XO)
+  { CC1101Reg::FREQ0,    (uint8_t)(FREQ_WORD)       },  // ─┘
+  // RX filter 203 kHz. The low nibble (data rate, 2.4 kBaud) sets the async
+  // sampler: 8x oversampling, so captured edges carry about ±50 µs of jitter.
+  { CC1101Reg::MDMCFG4,  0x86 },
   { CC1101Reg::MDMCFG3,  0x83 },  // data-rate mantissa (< not used in async mode)
   { CC1101Reg::MDMCFG2,  0x30 },  // OOK modulation, no sync word, no preamble detect
   { CC1101Reg::MDMCFG1,  0x22 },  // 4 preamble bytes, no FEC
@@ -26,11 +34,14 @@ const uint8_t CC1101::CONFIG_TABLE[][2] = {
   { CC1101Reg::FREND0,   0x11 },  // PA_POWER=1: OOK '1' → PATABLE[1], '0' → PATABLE[0]
   { CC1101Reg::FSCAL3,   0xEA },  // ─┐
   { CC1101Reg::FSCAL2,   0x2A },  //  │ Calibration constants from SmartRF Studio
-  { CC1101Reg::FSCAL1,   0x00 },  //  │ (valid for 26 MHz XO, 303 MHz)
+  { CC1101Reg::FSCAL1,   0x00 },  //  │ (seeds; calibration overwrites them)
   { CC1101Reg::FSCAL0,   0x1F },  // ─┘
   { CC1101Reg::TEST2,    0x81 },  // ─┐ Test registers — values from SmartRF Studio
   { CC1101Reg::TEST1,    0x35 },  //  │
-  { CC1101Reg::TEST0,    0x09 },  // ─┘
+  // TEST0 = 0x0B keeps VCO-selection calibration on. Below ~322.9 MHz the low
+  // VCO is required; 0x09 forces the high VCO and the PLL never locks at
+  // 303 MHz (measured on hardware: FSCAL1 = 0x00, lock detector low, RX deaf).
+  { CC1101Reg::TEST0,    0x0B },  // ─┘
 };
 const size_t CC1101::CONFIG_TABLE_LEN =
   sizeof(CC1101::CONFIG_TABLE) / sizeof(CC1101::CONFIG_TABLE[0]);
@@ -66,7 +77,7 @@ bool CC1101::begin() {
 
   // OOK power table. With FREND0.PA_POWER = 1 the modulator uses PATABLE[0]
   // for a '0' (carrier off) and PATABLE[1] for a '1' (carrier on), so index 0
-  // must be 0x00 and index 1 the output power (0xC0 ≈ +10 dBm @ 315 MHz band).
+  // must be 0x00 and index 1 the output power (0xC0 ≈ +10 dBm at 433 MHz).
   // Writing 0xC0 to index 0 alone would key the carrier on every LOW instead.
   const uint8_t pa[2] = { 0x00, 0xC0 };
   spiWriteBurst(CC1101Reg::PATABLE, pa, sizeof(pa));
@@ -137,8 +148,10 @@ void CC1101::deassertCS() {
 void CC1101::waitChipReady() {
   // Spin until MISO goes low. This is a documented requirement; skipping it
   // causes silent register corruption for any SPI access after a strobe.
+  // gpio_get_level() rather than digitalRead(): MISO belongs to the SPI
+  // peripheral, and digitalRead() logs a warning on every call for such pins.
   uint32_t deadline = micros() + 2000;  // 2 ms timeout
-  while (digitalRead(_misoPin) == HIGH) {
+  while (gpio_get_level((gpio_num_t)_misoPin) == 1) {
     if ((int32_t)(micros() - deadline) > 0) {
       Serial.println("[CC1101] WARN: chip-ready timeout");
       break;
@@ -212,7 +225,7 @@ void CC1101::reset() {
   SPI.transfer(CC1101Strobe::SRES);
   // Wait for MISO to go low — CC1101 holds it high during reset
   uint32_t deadline = micros() + 5000;
-  while (digitalRead(_misoPin) == HIGH) {
+  while (gpio_get_level((gpio_num_t)_misoPin) == 1) {
     if ((int32_t)(micros() - deadline) > 0) break;
   }
   deassertCS();

@@ -4,7 +4,7 @@ Control ceiling fans via RF remote learning and MQTT commands. FanSpitter is ESP
 
 ## Overview
 
-FanSpitter uses a **CC1101 RF transceiver** at **303 MHz OOK** (On-Off Keying) to:
+FanSpitter uses a **CC1101 RF transceiver** in **OOK** (On-Off Keying) mode, tuned to your remote's frequency (433.957 MHz by default), to:
 - Capture and learn RF signals from your ceiling fan remote
 - Store up to **8 named signal slots** in persistent flash memory
 - Replay learned signals via bit-bang modulation
@@ -15,7 +15,7 @@ FanSpitter uses a **CC1101 RF transceiver** at **303 MHz OOK** (On-Off Keying) t
 
 - **Captive-portal setup**: WiFi, MQTT broker, credentials and OTA password are entered on first boot. Nothing is hard-coded.
 - **8-slot RF storage** in NVS flash, kept across reboots and firmware updates
-- **2-frame confirmation** (±20%, min 50 µs) to reject RF noise while learning
+- **2-frame confirmation** (±20%, min 100 µs) to reject RF noise while learning
 - **MQTT** with optional username/password, a configurable base topic, retained status and Last-Will "offline"
 - **Web UI and JSON API** at `http://fanspitter.local/`
 - **OTA updates** over WiFi (password-protected)
@@ -29,7 +29,7 @@ FanSpitter uses a **CC1101 RF transceiver** at **303 MHz OOK** (On-Off Keying) t
 | **ESP32 DevKit** | Any ESP32 with VSPI + free GPIO pins (4 MB flash) |
 | **CC1101 module** | 26 MHz crystal (**not** a 27 MHz clone) |
 | **3.3 V supply** | CC1101 is sensitive to supply noise |
-| **Fan remote** | Any OOK remote near 303 MHz |
+| **Fan remote** | An OOK remote. Set `RF_FREQ_HZ` to its frequency (see [Remote frequency](#remote-frequency)) |
 
 ### Wiring (ESP32 ↔ CC1101)
 
@@ -44,6 +44,22 @@ FanSpitter uses a **CC1101 RF transceiver** at **303 MHz OOK** (On-Off Keying) t
 | GDO0      | GPIO 2    | Data I/O (RX interrupt, TX bit-bang) |
 
 > **GPIO 2 caveat:** GPIO 2 is an ESP32 boot-strapping pin and drives the on-board LED on many DevKits. The firmware keeps GDO0 quiet and pulled low when idle, but if USB flashing ever fails with *"Wrong boot mode detected"*, move GDO0 to **GPIO 4** and add `-DPIN_GDO0=4` to `build_flags` in `platformio.ini`. All pins are overridable this way (see [`src/config.h`](src/config.h)).
+
+Wiring diagrams for the 30-pin and 38-pin DevKit boards are in [`docs/prototype-runsheet.md`](docs/prototype-runsheet.md).
+
+### Remote frequency
+
+The carrier is set at build time by `RF_FREQ_HZ` in [`src/config.h`](src/config.h). The default, `433957000`, is the prototype's remote as measured. For a different remote, add the flag to `build_flags` in `platformio.ini`:
+
+```ini
+build_flags =
+    -DRF_FREQ_HZ=303875000
+```
+
+- **Don't assume the frequency.** Ceiling-fan remotes are commonly 433.92 MHz or around 303.9 MHz. The prototype's remote was expected to be 303 MHz and measured 433.957 MHz.
+- **Find it** from the FCC ID on the remote (look it up on fccid.io) or with an SDR.
+- **Tolerance:** the receive filter is 203 kHz wide, so the setting needs to be within roughly ±75 kHz of the remote's real carrier.
+- **Range:** the CC1101 covers 300–348, 387–464 and 779–928 MHz. Tuner lock has been checked on hardware from 303 to 345 MHz and at 433.92 MHz.
 
 ## Installation
 
@@ -100,12 +116,12 @@ The `ota` environment targets `fanspitter.local`. Override with `--upload-port <
 
 Slot names are 1–32 characters of `A–Z a–z 0–9 _ -` (e.g. `fan_high`, `light-toggle`). Re-using a name overwrites that slot.
 
-**Web UI:** enter a name, click **Start Learn**, then press the remote button **twice**. The first press captures, the second confirms. You have 30 seconds.
+**Web UI:** enter a name, click **Start Learn**, then press and **hold** the remote button for about a second, 20–30 cm from the antenna. A remote repeats its frame while the button is held; the first frame captures and the next one confirms. A remote that sends only one frame per press needs a second press. You have 30 seconds.
 
 **MQTT:**
 ```bash
 mosquitto_pub -h <broker> -t fanspitter/learn -m "fan_high"
-# press the remote button twice, then:
+# hold the remote button for about a second, then:
 mosquitto_sub -h <broker> -t fanspitter/learned
 # {"slot":"fan_high","ok":true,"pulses":84}
 ```
@@ -119,7 +135,7 @@ mosquitto_sub -h <broker> -t fanspitter/learned
 mosquitto_pub -h <broker> -t fanspitter/cmd -m "fan_high"
 ```
 
-Each send replays the frame 3 times, 20 ms apart.
+Each send replays the frame 8 times, with the remote's own gap between repeats.
 
 ## MQTT topics
 
@@ -203,7 +219,7 @@ The web UI and API have **no authentication**. Keep the device on a trusted LAN 
 | File | Role |
 |------|------|
 | `main.cpp` | Orchestration: setup portal, command queue, status, OTA, watchdogs |
-| `cc1101.h/.cpp` | SPI driver and register table (26 MHz XO, 303 MHz, async OOK) |
+| `cc1101.h/.cpp` | SPI driver and register table (26 MHz XO, `RF_FREQ_HZ`, async OOK) |
 | `rf_learn.h/.cpp` | IRAM ISR pulse capture, 2-frame confirmation, bit-bang TX |
 | `pulse_match.h` | Pure frame-comparison logic (unit-tested) |
 | `slot_name.h` | Slot-name validation (unit-tested) |
@@ -218,12 +234,16 @@ The web server runs in the AsyncTCP task; everything else runs in the Arduino lo
 
 ### Radio notes
 
-- **Crystal:** check that your CC1101 has a **26 MHz** crystal. A 27 MHz clone shifts the carrier ~12 MHz (to ~315 MHz).
+- **Crystal:** check that your CC1101 has a **26 MHz** crystal. A 27 MHz clone shifts the carrier up by 3.8% (about 17 MHz at 433.9 MHz).
+- **Tuner lock:** `TEST0 = 0x0B` keeps VCO-selection calibration on. With `0x09` the high VCO is forced and the PLL does not lock at 303 MHz (measured: unlocked at 303.0 and 303.9 MHz, locked from 315 MHz up).
+- **Data pin:** GDO0 is set to `0x0D`, the asynchronous serial data output. `0x0C` is the synchronous one and stays silent in this mode.
+- **Receive filter:** 203 kHz. The async sampler runs at 8× a 2.4 kBaud data rate, which puts about ±50 µs of jitter on each captured edge.
+- **Frames:** a carrier-off period of 5 ms or more ends a frame. Capture records one whole frame from gap to gap, and stores the closing gap (up to 30 ms) as the frame's last entry so replay keeps the remote's repeat spacing.
 - **OOK power table:** `FREND0.PA_POWER = 1`, so `PATABLE[0] = 0x00` (carrier off for a `0`) and `PATABLE[1] = 0xC0` (≈ +10 dBm for a `1`).
 - **Idle:** the CC1101 sits in IDLE and the GDO0 interrupt is detached except while learning (RX) or sending (TX).
 - **TX timing:** interrupts on the loop core are masked per frame for clean timing. Frames over 200 ms are sent unmasked so the interrupt watchdog can't fire.
-- **Capture polarity:** the first stored pulse is assumed to be carrier-on (line idles low between frames), and TX starts HIGH.
-- **Storage:** max 400 pulses per slot.
+- **Capture polarity:** the first stored pulse is carrier-on (a frame starts at the rising edge after a gap), and TX starts HIGH.
+- **Storage:** max 400 entries per slot, including the closing gap.
 
 ## Development
 
@@ -243,9 +263,9 @@ CI (`.gitea/workflows/build.yml`) runs the tests and build on every push and PR 
 
 **No `FanSpitter-Setup` AP**: check power under load. The AP can take 10–30 s to appear. If WiFi was configured but is unreachable, the portal only opens for 3 minutes per boot.
 
-**Signals not captured**: confirm GDO0 wiring, that the remote is OOK near 303 MHz, and hold it close to the antenna. Watch the serial log for `Frame 1 captured` / `Pulse N mismatch` lines.
+**Signals not captured**: if the log shows nothing at all until `Learn timeout`, the receiver isn't hearing the remote. Check that `RF_FREQ_HZ` matches the remote's real frequency (see [Remote frequency](#remote-frequency)), that the remote is OOK, and the GDO0 wire. If it shows repeated `Pulse N mismatch` lines, the remote is too close: back it off to 20–30 cm.
 
-**Sends don't work but learning does**: confirm the crystal (above), try the remote's exact frequency, and check that `Transmitted N pulses x 3` appears in the log.
+**Sends don't work but learning does**: check that `Transmitted N pulses x 8` appears in the log, confirm the crystal (above), and move the unit closer to the fan. Some receivers want more repeats: raise `RF_TX_REPEATS` in `src/rf_learn.h`.
 
 **MQTT won't connect**: the log shows `[MQTT] Failed (rc=…)`. `rc=5` means bad credentials and `rc=-2` means the broker is unreachable. Retries back off up to 60 s.
 
